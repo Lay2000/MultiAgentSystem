@@ -29,9 +29,10 @@ public class MyTWAgent extends TWAgent{
     }
 
     protected TWThought think() {
-//        getMemory().getClosestObjectInSensorRange(Tile.class);
+        // getMemory().getClosestObjectInSensorRange(Tile.class);
         System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: " + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", fuelX: " + this.memory.getFuelX());
 
+        // If the current location is on an object: TWTile, TWHole or FuelStation, then do something
         Object tempObject = this.getEnvironment().getObjectGrid().get(this.getX(), this.getY());
         if (this.carriedTiles.size() < 3 && tempObject != null && tempObject instanceof TWTile){
             return new TWThought(TWAction.PICKUP);
@@ -43,10 +44,12 @@ public class MyTWAgent extends TWAgent{
             return new TWThought(TWAction.REFUEL);
         }
 
+        // get a random direction as default
         TWDirection direction = getRandomDirection();
 
         if (this.curPath == null) {
-            // Go to refuel
+            // Find a random point and set a path to it
+            // Because if just move by random direction, the agent may just circle in a small area
             int targetX = 1;
             int targetY = 1;
             while (!this.getEnvironment().isValidCreationLocation(
@@ -56,6 +59,10 @@ public class MyTWAgent extends TWAgent{
             this.curPath = this.pathGenerator.findPath(this.getX(), this.getY(), targetX, targetY);
             this.curGoal = "RANDOM";
 
+            // If the state satisifies some conditions, then do something meanful. 
+            // The priority: Go to refuel > Go to pickup > Go to put down
+
+            // Go to refuel
             if (this.memory.getFuelX() != -1 && this.getFuelLevel() <= 100) {
                 this.curPath = this.pathGenerator.findPath(this.getX(), this.getY(), this.memory.getFuelX(), this.memory.getFuelY());
                 this.curGoal = "REFUEL";
@@ -76,6 +83,8 @@ public class MyTWAgent extends TWAgent{
             }
         }
 
+        // If there is a target position, and not rethink (CellBlockedException), then move following the curPath.
+        // Otherwise, move in a random direction
         if (this.curPath != null && this.curPath.hasNext() && this.rethink == false) {
             TWPathStep nextStep = this.curPath.popNext();
             direction = nextStep.getDirection();
@@ -90,14 +99,6 @@ public class MyTWAgent extends TWAgent{
 
     @Override
     protected void act(TWThought thought) {
-
-        //You can do:
-        //move(thought.getDirection())
-        //pickUpTile(Tile)
-        //putTileInHole(Hole)
-        //refuel()
-
-
         Object tempObject = this.getEnvironment().getObjectGrid().get(this.getX(), this.getY());
         switch(thought.getAction()){
 
