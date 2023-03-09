@@ -33,6 +33,11 @@ public class TWThought {
         this.action = action;
     }
 
+    public TWThought(TWAction action){
+        this.action = action;
+        this.direction = TWDirection.Z;
+    }
+
     public TWAction getAction() {
         return action;
     }
