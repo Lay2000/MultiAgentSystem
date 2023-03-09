@@ -30,7 +30,7 @@ public class SimpleTWAgent extends TWAgent{
 
     protected TWThought think() {
 //        getMemory().getClosestObjectInSensorRange(Tile.class);
-        System.out.println("Simple Score: " + this.score);
+        System.out.println("[" + this.getName() +"]" + " Score: " + this.score + ", Current FuelLevel: " + this.getFuelLevel());
         return new TWThought(TWAction.MOVE,getRandomDirection());
     }
 

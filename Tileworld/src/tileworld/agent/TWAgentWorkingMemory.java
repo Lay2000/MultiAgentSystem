@@ -9,15 +9,8 @@ import sim.field.grid.ObjectGrid2D;
 import sim.util.Bag;
 import sim.util.Int2D;
 import sim.util.IntBag;
-import tileworld.environment.NeighbourSpiral;
+import tileworld.environment.*;
 import tileworld.Parameters;
-import tileworld.environment.TWEntity;
-
-
-import tileworld.environment.TWHole;
-import tileworld.environment.TWObject;
-import tileworld.environment.TWObstacle;
-import tileworld.environment.TWTile;
 
 /**
  * TWAgentMemory
@@ -49,6 +42,8 @@ public class TWAgentWorkingMemory {
 	private final static float MEM_DECAY = 0.5f;
 
 	private ObjectGrid2D memoryGrid;
+	private int fuelX = -1;
+	private int fuelY = -1;
 
 	/*
 	 * This was originally a queue ordered by the time at which the fact was observed.
@@ -81,6 +76,7 @@ public class TWAgentWorkingMemory {
 
 		this.schedule = schedule;
 		this.memoryGrid = new ObjectGrid2D(me.getEnvironment().getxDimension(), me.getEnvironment().getyDimension());
+
 	}
 
 	/**
@@ -114,10 +110,13 @@ public class TWAgentWorkingMemory {
 		//       this.decayMemory();       // You might want to think about when to call the decay function as well.
 		for (int i = 0; i < sensedObjects.size(); i++) {
 			TWEntity o = (TWEntity) sensedObjects.get(i);
+			if(o instanceof TWFuelStation) {
+				this.fuelX = o.getX();
+				this.fuelY = o.getY();
+			}
 			if (!(o instanceof TWObject)) {
 				continue;
 			}
-			
 			//if nothing in memory currently, then were increasing the number 
 			//of items we have in memory by 1
 			//if(objects[objectXCoords.get(i)][objectYCoords.get(i)] == null) memorySize++;
@@ -329,5 +328,13 @@ public class TWAgentWorkingMemory {
 
 	public ObjectGrid2D getMemoryGrid() {
 		return this.memoryGrid;
+	}
+
+	public int getFuelX() {
+		return this.fuelX;
+	}
+
+	public int getFuelY() {
+		return this.fuelY;
 	}
 }
