@@ -1,5 +1,6 @@
 package tileworld.agent;
 
+import java.util.ArrayList;
 import sim.display.GUIState;
 import sim.portrayal.Inspector;
 import sim.portrayal.LocationWrapper;
@@ -9,6 +10,8 @@ import tileworld.Parameters;
 import tileworld.environment.*;
 import tileworld.exceptions.CellBlockedException;
 import tileworld.planners.*;
+import tileworld.agent.MyMessage;
+
 
 import java.awt.*;
 
@@ -53,25 +56,27 @@ public class MyTWAgent extends TWAgent{
         // getMemory().getClosestObjectInSensorRange(Tile.class);
         ArrayList<Message> messages = this.getEnvironment().getMessages();
 		for (int i = 0; i < messages.size(); i++) {
-			TypedMessage message = (TypedMessage) messages.get(i);
+			MyMessage message = (MyMessage) messages.get(i);
 			if (message.getTo().equals("ALL")) {
 				if (message.getMessage().equals("FUEL_STATION")) {
                     // set the FUEL_STATION
-                    this.getMemory().setFuelStation(message.getCoordinate().getX(), message.getCoordinate.getY());
-                    this.foundFuelStation = true;
+                    System.out.println("Received FUEL_STATION");
+                    if (this.getMemory().getFuelStation() == null) {
+                        this.getMemory().setFuelStation(message.getCoordinate().getX(), message.getCoordinate().getY());
+                        this.foundFuelStation = true;
+                    }
                 } else if (message.getMessage().equals("AGENT")) {
                     // Do Some Action
                     continue;
                 } else if (message.getMessage().equals("TARGET")) {
-                    // Do Some Action, such as set a conflit target list
+                    // Do Some Action, such as set a conflict target list
                     continue;
                 }
 			}
 		}
 
         System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: "
-                + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", fuelX: "
-                + this.memory.getFuelStation().getX() + ", fuelY: " + this.memory.getFuelStation().getY());
+                + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", Found FuelStation: " + this.foundFuelStation);
 
         // If the current location is on an object: TWTile, TWHole or FuelStation, then do something
         Object tempObject = this.getEnvironment().getObjectGrid().get(this.getX(), this.getY());
@@ -105,8 +110,8 @@ public class MyTWAgent extends TWAgent{
             // The priority: Go to refuel > Go to pickup > Go to put down
 
             // Go to refuel
-            if (this.memory.getFuelStation().getX() != -1 && this.getFuelLevel() <= 100) {
-                this.curPath = this.pathGenerator.findPath(this.getX(), this.getY(), this.memory.getFuelStation().getX(), this.memory.getFuelStation().getX());
+            if (this.memory.getFuelStation() != null && this.getFuelLevel() <= 100) {
+                this.curPath = this.pathGenerator.findPath(this.getX(), this.getY(), this.memory.getFuelStation().getX(), this.memory.getFuelStation().getY());
                 this.curGoal = "REFUEL";
             }
 
