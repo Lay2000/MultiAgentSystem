@@ -42,8 +42,9 @@ public class TWAgentWorkingMemory {
 	private final static float MEM_DECAY = 0.5f;
 
 	private ObjectGrid2D memoryGrid;
-	private int fuelX = -1;
-	private int fuelY = -1;
+//	private int fuelX = -1;
+//	private int fuelY = -1;
+	private Int2D fuelStation;
 
 	/*
 	 * This was originally a queue ordered by the time at which the fact was observed.
@@ -111,8 +112,7 @@ public class TWAgentWorkingMemory {
 		for (int i = 0; i < sensedObjects.size(); i++) {
 			TWEntity o = (TWEntity) sensedObjects.get(i);
 			if(o instanceof TWFuelStation) {
-				this.fuelX = o.getX();
-				this.fuelY = o.getY();
+				this.fuelStation = new Int2D(o.getX(), o.getY());
 			}
 			if (!(o instanceof TWObject)) {
 				continue;
@@ -157,7 +157,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * updates memory using 2d array of sensor range - currently not used
-	 * @see TWAgentWorkingMemory#updateMemory(sim.util.Bag, sim.util.IntBag, sim.util.IntBag)
+	 * @see TWAgentWorkingMemory updateMemory(sim.util.Bag, sim.util.IntBag, sim.util.IntBag)
 	 */
 	public void updateMemory(TWEntity[][] sensed, int xOffset, int yOffset) {
 		for (int x = 0; x < sensed.length; x++) {
@@ -232,7 +232,6 @@ public class TWAgentWorkingMemory {
 	}
 
 
-
 	/**
 	 * Returns the nearest object that has been remembered recently where recently
 	 * is defined by a number of timesteps (threshold)
@@ -246,8 +245,8 @@ public class TWAgentWorkingMemory {
 	 * Also note that it is likely that nearby objects are also the most recently observed
 	 *
 	 *
-	 * @param x coordinate from which to check for objects
-	 * @param y coordinate from which to check for objects
+	 * @param sx coordinate from which to check for objects
+	 * @param sy coordinate from which to check for objects
 	 * @param threshold how recently we want to have seen the object
 	 * @param type the class of object we're looking for (Must inherit from TWObject, specifically tile or hole)
 	 * @return
@@ -330,11 +329,5 @@ public class TWAgentWorkingMemory {
 		return this.memoryGrid;
 	}
 
-	public int getFuelX() {
-		return this.fuelX;
-	}
-
-	public int getFuelY() {
-		return this.fuelY;
-	}
+	public Int2D getFuelStation() { return this.fuelStation; }
 }
