@@ -14,6 +14,10 @@ public class MyMessage extends Message{
     public Int2D getCoordinate() {
         return coordinate;
     }
+
+    public String getType() {
+        return this.getMessage();
+    }
 }
 
 enum MessageType {

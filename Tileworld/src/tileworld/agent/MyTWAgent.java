@@ -51,6 +51,24 @@ public class MyTWAgent extends TWAgent{
 
     protected TWThought think() {
         // getMemory().getClosestObjectInSensorRange(Tile.class);
+        ArrayList<Message> messages = this.getEnvironment().getMessages();
+		for (int i = 0; i < messages.size(); i++) {
+			TypedMessage message = (TypedMessage) messages.get(i);
+			if (message.getTo().equals("ALL")) {
+				if (message.getMessage().equals("FUEL_STATION")) {
+                    // set the FUEL_STATION
+                    this.getMemory().setFuelStation(message.getCoordinate().getX(), message.getCoordinate.getY());
+                    this.foundFuelStation = true;
+                } else if (message.getMessage().equals("AGENT")) {
+                    // Do Some Action
+                    continue;
+                } else if (message.getMessage().equals("TARGET")) {
+                    // Do Some Action, such as set a conflit target list
+                    continue;
+                }
+			}
+		}
+
         System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: "
                 + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", fuelX: "
                 + this.memory.getFuelStation().getX() + ", fuelY: " + this.memory.getFuelStation().getY());

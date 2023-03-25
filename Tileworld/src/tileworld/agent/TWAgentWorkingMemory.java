@@ -112,7 +112,7 @@ public class TWAgentWorkingMemory {
 		for (int i = 0; i < sensedObjects.size(); i++) {
 			TWEntity o = (TWEntity) sensedObjects.get(i);
 			if(o instanceof TWFuelStation) {
-				this.fuelStation = new Int2D(o.getX(), o.getY());
+				this.setFuelStation(o.getX(), o.getY());
 			}
 			if (!(o instanceof TWObject)) {
 				continue;
@@ -330,4 +330,8 @@ public class TWAgentWorkingMemory {
 	}
 
 	public Int2D getFuelStation() { return this.fuelStation; }
+
+	public void setFuelStation(int x, int y) {
+		this.fuelStation = new Int2D(x, y);
+	}
 }
