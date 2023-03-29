@@ -173,18 +173,18 @@ public class TWAgentWorkingMemory {
 	 * remove probabilistically (exponential decay of memory)
 	 */
 	public void decayMemory() {
-		// put some decay on other memory pieces (this will require complete
-		// iteration over memory though, so expensive.
-		//This is a simple example of how to do this.
-		//        for (int x = 0; x < this.objects.length; x++) {
-		//       for (int y = 0; y < this.objects[x].length; y++) {
-		//           TWAgentPercept currentMemory =  objects[x][y];
-		//           if(currentMemory!=null && currentMemory.getT() < schedule.getTime()-MAX_TIME){
-		//               memoryGrid.set(x, y, null);
-		//               memorySize--;
-		//           }
-		//       }
-		//   }
+	//		 put some decay on other memory pieces (this will require complete
+	//		 iteration over memory though, so expensive.
+	//		This is a simple example of how to do this.
+		for (int x = 0; x < this.objects.length; x++) {
+		   for (int y = 0; y < this.objects[x].length; y++) {
+			   TWAgentPercept currentMemory =  objects[x][y];
+			   if(currentMemory!=null && currentMemory.getT() < schedule.getTime()-MAX_TIME){
+				   memoryGrid.set(x, y, null);
+				   memorySize--;
+			   }
+		   }
+		}
 	}
 
 

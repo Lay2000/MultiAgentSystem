@@ -20,7 +20,7 @@ public class MyTWAgent extends TWAgent{
     protected TWPathGenerator pathGenerator;
     private String name;
     private TWPath curPath = null;
-    private boolean rethink = false;
+    private int rethink = 0;
     private String curGoal = "RANDOM";
     // add these to help with communicate()
     private boolean foundFuelStation = false;
@@ -75,8 +75,12 @@ public class MyTWAgent extends TWAgent{
 			}
 		}
 
-        System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: "
-                + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", Found FuelStation: " + this.foundFuelStation);
+//        System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: "
+//                + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", Found FuelStation: " + this.foundFuelStation);
+
+        if (this.rethink >= 3) {
+            return new TWThought(TWAction.MOVE); // Direction Default as Z(0,0)
+        }
 
         // If the current location is on an object: TWTile, TWHole or FuelStation, then do something
         Object tempObject = this.getEnvironment().getObjectGrid().get(this.getX(), this.getY());
@@ -110,7 +114,7 @@ public class MyTWAgent extends TWAgent{
             // The priority: Go to refuel > Go to pickup > Go to put down
 
             // Go to refuel
-            if (this.memory.getFuelStation() != null && this.getFuelLevel() <= 100) {
+            if (this.memory.getFuelStation() != null && this.getFuelLevel() <= 200) {
                 this.curPath = this.pathGenerator.findPath(this.getX(), this.getY(), this.memory.getFuelStation().getX(), this.memory.getFuelStation().getY());
                 this.curGoal = "REFUEL";
             }
@@ -134,7 +138,7 @@ public class MyTWAgent extends TWAgent{
 
         // If there is a target position, and not rethink (CellBlockedException), then move following the curPath.
         // Otherwise, move in a random direction
-        if (this.curPath != null && this.curPath.hasNext() && this.rethink == false) {
+        if (this.curPath != null && this.curPath.hasNext() && this.rethink == 0) {
             TWPathStep nextStep = this.curPath.popNext();
             direction = nextStep.getDirection();
         }
@@ -142,6 +146,7 @@ public class MyTWAgent extends TWAgent{
             this.curPath = null;
         }
 
+        this.getMemory().decayMemory();
         return new TWThought(TWAction.MOVE,direction);
         // There should be a Planner to Plan the Path, Instead of using getRandomDirection
     }
@@ -169,9 +174,9 @@ public class MyTWAgent extends TWAgent{
                 try {
                     this.move(thought.getDirection());
                 } catch (CellBlockedException ex) {
-                    this.rethink = true;
+                    this.rethink += 1;
                     this.act(this.think());
-                    this.rethink = false;
+                    this.rethink -= 1;
                 }
         }
     }
