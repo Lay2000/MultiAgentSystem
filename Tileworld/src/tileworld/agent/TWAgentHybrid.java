@@ -237,7 +237,7 @@ public class TWAgentHybrid extends TWAgent {
      */
     @Override
     protected TWThought think() {
-        // 先判断要不要初始化划分区域
+        assignZone(this.getEnvironment().getxDimension(), this.getEnvironment().getyDimension());
         // 然后进行知识共享，发送message进行记忆合并
         // 分析招标协助，把可能的标加入可协助表，并广播
         // 接收广播，解决可能的冲突

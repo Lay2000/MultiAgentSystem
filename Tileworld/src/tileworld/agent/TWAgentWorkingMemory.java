@@ -57,6 +57,11 @@ public class TWAgentWorkingMemory {
 	 */
 	private ObjectGrid2D memoryGrid;
 
+	/**
+	 * 获取主记忆存储网格
+	 * 
+	 * @return 网格对象
+	 */
 	public ObjectGrid2D getMemoryGrid() {
 		return this.memoryGrid;
 	}
@@ -68,16 +73,36 @@ public class TWAgentWorkingMemory {
 	 */
 	private TWAgentPercept[][] objects;
 
+	/**
+	 * 获取副观测列表
+	 * 
+	 * @return agent的观测，包装了时间戳的对象
+	 */
+	public TWAgentPercept[][] getObjects() {
+		return this.objects;
+	}
+
 	// --------------
 	/**
 	 * 加油站位置
 	 */
 	private Int2D fuelStation;
 
+	/**
+	 * 返回加油站坐标
+	 * 
+	 * @return 加油站坐标
+	 */
 	public Int2D getFuelStation() {
 		return this.fuelStation;
 	}
 
+	/**
+	 * 设置加油站坐标
+	 * 
+	 * @param x 加油站x
+	 * @param y 加油站y
+	 */
 	public void setFuelStation(int x, int y) {
 		this.fuelStation = new Int2D(x, y);
 	}
@@ -335,7 +360,7 @@ public class TWAgentWorkingMemory {
 	}
 
 	/**
-	 * 清除记忆中特定位置的东西
+	 * 清除‘观测’记忆中特定位置的东西
 	 * 
 	 * @param x x坐标
 	 * @param y y坐标
@@ -345,7 +370,7 @@ public class TWAgentWorkingMemory {
 	}
 
 	/**
-	 * 清除一个特定的物品实例，是上一个函数的包装。
+	 * 清除清除‘观测’记忆中一个特定的物品实例。
 	 * 
 	 * @param o 物品实例
 	 */
