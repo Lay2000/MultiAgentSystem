@@ -1,11 +1,13 @@
 package tileworld.agent;
 
-import java.util.LinkedList;
-import java.util.PriorityQueue;
+import java.util.*;
 
 import sim.util.Int2D;
+import tileworld.Parameters;
 import tileworld.environment.TWEntity;
 import tileworld.environment.TWEnvironment;
+import tileworld.environment.TWHole;
+import tileworld.environment.TWTile;
 import tileworld.planners.DefaultTWPlanner;
 
 /**
@@ -102,10 +104,10 @@ public class TWAgentHybrid extends TWAgent {
     private Mode mode;
     /**
      * 区域编号列表
-     * 第agentID个元素代表其分配到的区域编号
-     * 区域可按顺序编号，比如从左到右均匀划分地图5块，从左至右为0到4号
+     * key代表agentID，value代表区域编号
+     * 源代码中用数组索引易出错，改为用hashmap更好
      */
-    private Integer[] myZoneID;
+    private HashMap<Integer, Integer> myZoneID;
     /**
      * 包含了agent所属区域四个角坐标的数组
      * （左上-右上-右下-左下)
@@ -201,11 +203,81 @@ public class TWAgentHybrid extends TWAgent {
     public void communicate() {
         // 获取记忆
         // 发送自己的记忆
+        // 暂且规定 receiver 为 0 时向全体广播
+        Message message = new Message(agentID, 0, MsgType.agentInfo,
+                new Object[] { workingMemory.getAgentPercept(), new Int2D(x, y) });
+        this.getEnvironment().receiveMessage(message);
 
         // 判断是否初始化完成（划分好区域了）
+        if (bounds[0] == null) return;
+
         // 是的话就
         // 判断可达性--添加可能列表--添加招标列表--发送自己的goal和招标信息
         // 注意判断各种限制，比如最大可携带的tile数量
+        tilesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, TWTile.class);
+        holesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, TWHole.class);
+
+        possibleTileGoals.clear();
+        possibleHoleGoals.clear();
+
+        LinkedList<TWEntity> goals = new LinkedList<TWEntity>();
+        LinkedList<TWEntity> auctionTiles = new LinkedList<TWEntity>();
+        LinkedList<TWEntity> auctionHoles = new LinkedList<TWEntity>();
+
+        // 判断可达性--添加可能列表
+        while (!tilesInZone.isEmpty()) {
+            TWEntity tile = tilesInZone.poll();
+            double distToTile = this.getDistanceTo(tile);
+            if (workingMemory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile) auctionTiles.add(tile);
+            else possibleTileGoals.add(tile);
+        }
+
+        while (!holesInZone.isEmpty()) {
+            TWEntity hole = holesInZone.poll();
+            double distToHole = this.getDistanceTo(hole);
+            if (workingMemory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole) auctionHoles.add(hole);
+            else possibleHoleGoals.add(hole);
+        }
+
+        closestTile = possibleTileGoals.toArray(new TWEntity[0]);
+        closestHole = possibleHoleGoals.toArray(new TWEntity[0]);
+
+        // 筛选目标以及招标
+        int tileCount = this.carriedTiles.size();
+        for (int i = 0; i < closestTile.length; i++) {
+            if (tileCount >= 3 || i > goalAnnounceCount) auctionTiles.add(closestTile[i]);
+            else {
+                tileCount ++;
+                goals.add(closestTile[i]);
+            }
+        }
+
+        for (int i = 0; i < closestHole.length; i++) {
+            if (tileCount <= 0 || i > goalAnnounceCount) auctionHoles.add(closestHole[i]);
+            else {
+                tileCount --;
+                goals.add(closestHole[i]);
+            }
+        }
+
+        // 发送自己的目标和招标信息
+        if (goals.size() > 0) {
+            TWEntity[] goalsArr = goals.toArray(new TWEntity[0]);
+            Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
+            this.getEnvironment().receiveMessage(goalMessage);
+        }
+
+        if (auctionTiles.size() > 0) {
+            TWEntity[] auctionArr = auctionTiles.toArray(new TWEntity[0]);
+            Message auctionTileMessage = new Message(agentID, 0, MsgType.contractInfo_tile, new Object[] { auctionArr, myZoneID.get(agentID) });
+            this.getEnvironment().receiveMessage(auctionTileMessage);
+        }
+
+        if (auctionHoles.size() > 0) {
+            TWEntity[] auctionArr = auctionHoles.toArray(new TWEntity[0]);
+            Message auctionHoleMessage = new Message(agentID, 0, MsgType.contractInfo_hole, new Object[] { auctionArr, myZoneID.get(agentID) });
+            this.getEnvironment().receiveMessage(auctionHoleMessage);
+        }
     }
 
     /**
@@ -218,6 +290,120 @@ public class TWAgentHybrid extends TWAgent {
      */
     public void assignZone(int width, int height) {
         // 具体逻辑可以参考文档里说的
+        int agentCount = 0;
+        ArrayList<Message> messages = this.getEnvironment().getMessages();
+        Map<Integer, Int2D> agentPos = new HashMap<>();
+
+        // 确认agent数量存储agent当前位置
+        for (Message msg : messages) {
+            if (msg.getReceiver() == 0 && msg.getMessageType() == MsgType.agentInfo) {
+                agentPos.put(msg.getSender(), (Int2D) msg.getMessageContent()[1]);
+                agentCount ++;
+            }
+        }
+
+        // 对agent和zone按距离进行匹配，之后确定各区域边界
+        Int2D zoneDim;
+        int myZoneIdx;
+        boolean[] agentAssigned = new boolean[agentCount];
+        if (width <= height) {
+            zoneDim = new Int2D(width, height / agentCount);
+
+            for (Map.Entry<Integer, Int2D> e : agentPos.entrySet()) { // 对每个agent
+                int minDist = Parameters.xDimension + Parameters.yDimension;
+                int zoneIdx = 0;
+                for (int j = 0; j < agentCount; j ++) { // 对每个区域
+                    if (agentAssigned[j]) continue; // 已被分配
+                    Int2D agtPos = e.getValue();
+                    int distToZone = agtPos.x + Math.abs(agtPos.y - zoneDim.y * j);
+                    if (distToZone < minDist) zoneIdx = j;
+                }
+                myZoneID.put(e.getKey(), zoneIdx);
+                agentAssigned[zoneIdx] = true;
+            }
+
+            // 计算边界
+            myZoneIdx = myZoneID.get(agentID);
+
+            bounds[0] = new Int2D(0, zoneDim.y * myZoneIdx);
+            bounds[1] = new Int2D(width, zoneDim.y * myZoneIdx);
+
+            // 如果是最后一块则覆盖剩余所有区域
+            if (myZoneIdx == agentCount - 1) {
+                bounds[2] = new Int2D(width, height);
+                bounds[3] = new Int2D(0, height);
+            }
+            else {
+                bounds[2] = new Int2D(width, zoneDim.y * (myZoneIdx + 1));
+                bounds[3] = new Int2D(0, zoneDim.y * (myZoneIdx + 1));
+            }
+        }
+        else {
+            zoneDim = new Int2D(width / agentCount, height);
+
+            for (Map.Entry<Integer, Int2D> e : agentPos.entrySet()) { // 对每个agent
+                int minDist = Parameters.xDimension + Parameters.yDimension;
+                int zoneIdx = 0;
+                for (int j = 0; j < agentCount; j ++) { // 对每个区域
+                    if (agentAssigned[j]) continue; // 已被分配
+                    Int2D agtPos = e.getValue();
+                    int distToZone = agtPos.y + Math.abs(agtPos.x - zoneDim.x * j);
+                    if (distToZone < minDist) zoneIdx = j;
+                }
+                myZoneID.put(e.getKey(), zoneIdx);
+                agentAssigned[zoneIdx] = true;
+            }
+
+            myZoneIdx = myZoneID.get(agentID);
+            bounds[0] = new Int2D(zoneDim.x * myZoneIdx, 0);
+
+            if (myZoneIdx == agentCount - 1) {
+                bounds[1] = new Int2D(width, 0);
+                bounds[2] = new Int2D(width, height);
+            }
+            else {
+                bounds[1] = new Int2D(zoneDim.x * (myZoneIdx + 1), 0);
+                bounds[2] = new Int2D(zoneDim.x * (myZoneIdx + 1), height);
+            }
+
+            bounds[3] = new Int2D(zoneDim.x * myZoneIdx, height);
+        }
+
+        // 计算锚点
+        zoneDim = new Int2D(bounds[1].x - bounds[0].x, bounds[3].y - bounds[0].y);
+        int horizontalAnchors = (int) Math.ceil(zoneDim.x / (Parameters.defaultSensorRange * 2.0 + 1));
+        int verticalAnchors = (int) Math.ceil(zoneDim.y / (Parameters.defaultSensorRange * 2.0 + 1));
+        anchors = new Int2D[horizontalAnchors * verticalAnchors];
+
+        for (int i = 0, j = 0; i < verticalAnchors; i ++) {
+            Int2D[] tmpAnchors = new Int2D[horizontalAnchors];
+
+            for (int k = 0; k < horizontalAnchors; k ++) {
+                int anchorX, anchorY;
+
+                if (i == verticalAnchors - 1) anchorY = bounds[2].y - Parameters.defaultSensorRange;
+                else anchorY = bounds[0].y + Parameters.defaultSensorRange + (Parameters.defaultSensorRange * 2 + 1) * i;
+
+                if (k == horizontalAnchors - 1) anchorX = bounds[2].x - Parameters.defaultSensorRange;
+                else anchorX = bounds[0].x + Parameters.defaultSensorRange + (Parameters.defaultSensorRange * 2 + 1) * k;
+
+                tmpAnchors[k] = new Int2D(anchorX, anchorY);
+            }
+
+            // 按照行进顺序把锚点依次放入
+            if (i % 2 != 0) {
+                for (int k = horizontalAnchors - 1; k >= 0; k --) {
+                    anchors[j] = tmpAnchors[k];
+                    j ++;
+                }
+            }
+            else {
+                for (int k = 0; k < horizontalAnchors; k ++) {
+                    anchors[j] = tmpAnchors[k];
+                    j ++;
+                }
+            }
+        }
     }
 
     /**
@@ -230,6 +416,13 @@ public class TWAgentHybrid extends TWAgent {
      */
     public void mergeContracts(PriorityQueue<TWEntity> queue, TWEntity[] contractObj, int contractZone) {
         // 比如通过判断可达性将物品放入自己列表中
+        int myZone = myZoneID.get(agentID);
+        if (myZone != contractZone && Math.abs(myZone - contractZone) <= maxAssistZoneDistance) {
+            for (TWEntity twEntity : contractObj) {
+                double distToObj = this.getDistanceTo(twEntity);
+                if (!(workingMemory.getEstimatedRemainingLifetime(twEntity, this.objectLifetimeThreshold) <= distToObj)) queue.add(twEntity);
+            }
+        }
     }
 
     /**
