@@ -8,7 +8,10 @@ import tileworld.environment.TWEntity;
 import tileworld.environment.TWEnvironment;
 import tileworld.environment.TWHole;
 import tileworld.environment.TWTile;
+import tileworld.environment.TWFuelStation;
+import tileworld.environment.TWDirection;
 import tileworld.planners.DefaultTWPlanner;
+import tileworld.exceptions.CellBlockedException;
 
 /**
  * agent实现
@@ -425,27 +428,315 @@ public class TWAgentHybrid extends TWAgent {
         }
     }
 
+    public double getTSPDistance(TWEntity o) {
+        double oDist = getDistanceTo(o);
+        // Modifies Manhattan distance by lifetime remaining, so between two equidistant objects, the one with a shorter lifetime is closer
+        if (this.TSPHeuristic) {
+            oDist *= workingMemory.getEstimatedRemainingLifetime(o, 1.0)/Parameters.lifeTime;
+        }
+        return oDist;
+    }
     /**
      * 主要的思考函数
      */
     @Override
     protected TWThought think() {
-        assignZone(this.getEnvironment().getxDimension(), this.getEnvironment().getyDimension());
         // 然后进行知识共享，发送message进行记忆合并
         // 分析招标协助，把可能的标加入可协助表，并广播
         // 接收广播，解决可能的冲突
         // 思考行动模式（可以按他们ppt里的大逻辑图来）
         // 重新思考行动计划（包括清除现有计划、检查当前位置、按照当前位置信息和行动模式来确定最终的goal，并使用planner生成路径，得到行动方向）
+        // 
+        if (bounds[0] == null) {
+			assignZone(this.getEnvironment().getxDimension(), this.getEnvironment().getyDimension());
+			tilesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWTile().getClass());
+			holesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWHole().getClass());
+			while (!tilesInZone.isEmpty()) {
+				TWEntity tile = tilesInZone.poll();
+				double distToTile = this.getDistanceTo(tile);
+				if (!(workingMemory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile)) {
+					possibleTileGoals.add(tile);
+				}
+			}
+			while (!holesInZone.isEmpty()) {
+				TWEntity hole = holesInZone.poll();
+				double distToHole = this.getDistanceTo(hole);
+				if (!(workingMemory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole)) {
+					possibleHoleGoals.add(hole);
+				}
+			}
+			closestTile = new TWEntity[possibleTileGoals.size()];
+			closestHole = new TWEntity[possibleHoleGoals.size()];
+			closestTile = possibleTileGoals.toArray(closestTile);
+			closestHole = possibleHoleGoals.toArray(closestHole);
+		}
 
-        return null;
+		// Merge all shared maps before any further deliberation
+		ArrayList<Message> messages = this.getEnvironment().getMessages();
+		for (int i = 0; i < messages.size(); i++) {
+			Message message = messages.get(i);
+			if (message.getSender() != agentID &&
+				message.getReceiver() == 0 &&
+				message.getMessageType() == MsgType.agentInfo) {
+				workingMemory.mergeMemory((TWAgentPercept[][]) message.getMessageContent()[0], (Int2D) message.getMessageContent()[1]);
+			}
+		}
+
+		// Check environment for available contracts
+		Comparator<TWEntity> distHeur = new Comparator<TWEntity>() {
+			public int compare(TWEntity o1, TWEntity o2) {
+				   return (int) (getTSPDistance(o1) - getTSPDistance(o2));
+			}
+		};
+		PriorityQueue<TWEntity> assistableTiles = new PriorityQueue<TWEntity>(10, distHeur);
+		PriorityQueue<TWEntity> assistableHoles = new PriorityQueue<TWEntity>(10, distHeur);
+		for (int i = 0; i < messages.size(); i++) {
+			Message message = (Message) messages.get(i);
+			if (message.getSender() != agentID &&
+				message.getReceiver() == 0) {
+				if (message.getMessageType() == MsgType.contractInfo_tile) {
+					mergeContracts(assistableTiles, (TWEntity[]) message.getMessageContent()[0], (int) message.getMessageContent()[1]);
+				}
+				else if (message.getMessageType() == MsgType.contractInfo_hole) {
+					mergeContracts(assistableHoles, (TWEntity[]) message.getMessageContent()[0], (int) message.getMessageContent()[1]);
+				}
+			}
+		}
+
+		// Remove announced goals from goal and contract lists to prevent goal collisions
+		for (int i = 0; i < messages.size(); i++) {
+			Message message = (Message) messages.get(i);
+			if (message.getSender() != agentID &&
+				message.getReceiver() == 0 &&
+				message.getMessageType() == MsgType.goalInfo) {
+				TWEntity[] announcedGoals = (TWEntity[]) message.getMessageContent();
+				for (int j = 0; j < announcedGoals.length; j++) {
+					if (announcedGoals[j] instanceof TWTile) {
+						assistableTiles.remove(announcedGoals[j]);
+						possibleTileGoals.remove(announcedGoals[j]);
+					}
+					else if (announcedGoals[j] instanceof TWHole) {
+						assistableHoles.remove(announcedGoals[j]);
+						possibleHoleGoals.remove(announcedGoals[j]);
+					}
+				}
+			}
+		}
+
+		// Default Mode
+		mode = Mode.EXPLORE;
+
+		// Refueling takes utmost priority if fuel station already found and low on fuel
+		if (workingMemory.getFuelStation() != null && this.getDistanceTo(workingMemory.getFuelStation().x, workingMemory.getFuelStation().y) >= this.fuelLevel * fuelTolerance) {
+			mode = Mode.REFUEL;
+		}
+		// If fuel station not yet found, exploration takes highest priority
+		else if (workingMemory.getFuelStation() == null) {
+			mode = Mode.EXPLORE;
+		}
+		else if (this.fuelLevel <= this.hardFuelLimit) {
+			// Extremely rare scenario where fuel station is not found during first exploration phase
+			// Agent waits until other agents finishes exploring their zones and hopefully finds the fuel station
+			// In the event fuel station is in this agent's zone, other agents have to assist exploring
+			// the remaining parts of this zone, hopefully with enough fuel to spare
+			// (ASSIST_EXPLORE not programmed in yet, requires broadcasting remaining exploration map to environment)
+			if (workingMemory.getFuelStation() == null) {
+				mode = Mode.WAIT;
+			}
+			else {
+				mode = Mode.REFUEL;
+			}
+		}
+		// If no tile and tile nearby, collect tile else explore
+		else if (!this.hasTile()) {
+			if (closestTile.length > 0) {
+				mode = Mode.COLLECT;
+			}
+			else if (allowAssistance && !assistableTiles.isEmpty()) {
+				mode = Mode.ASSIST_COLLECT;
+			}
+		}
+		// If agent has tile and there is a hole nearby, prioritize filling hole
+		else if (closestHole.length > 0) {
+			if (closestTile.length == 0 ||
+				(getTSPDistance(closestHole[0]) <= getTSPDistance(closestTile[0])) ||
+				this.carriedTiles.size() >= 3) {
+				mode = Mode.FILL;
+			}
+			else {
+				mode = Mode.COLLECT;
+			}
+		}
+		// If not at maximum number of tiles and there is only tile(s) nearby, collect tile(s)
+		else if (closestTile.length > 0 && this.carriedTiles.size() < 3) {
+			mode = Mode.COLLECT;
+		}
+		// If no tiles and holes in own zone, but there are assistable holes in a neighboring zone,
+		// assist agent in neighboring zone to fill holes
+		else if (allowAssistance && !assistableHoles.isEmpty()) {
+			mode = Mode.ASSIST_FILL;
+		}
+
+		// Deletes plan and reevaluate goals every step rather than checking for new/decayed tiles/holes/obstacles
+		// and changing existing plan
+		planner.getGoals().clear();
+		planner.voidPlan();
+
+		// Always checks if possible to pickup/fill/refuel even when prioritizing
+		// exploration
+		Object curLocObj = this.memory.getMemoryGrid().get(x, y);
+		if (curLocObj instanceof TWHole &&
+			this.getEnvironment().canPutdownTile((TWHole) curLocObj, this)) {
+			mode = Mode.REACT_FILL;
+
+			// Announce goal as there is possibility target is not in purview of own's zone and is encountered enroute to or from refueling
+			// If so, there may be a possibility of goal collision
+			TWEntity[] goalsArr = new TWEntity[] {this.workingMemory.getObjects()[x][y].getO()};
+			Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
+			this.getEnvironment().receiveMessage(goalMessage);
+
+			planner.getGoals().add(new Int2D(this.x, this.y));
+			return new TWThought(TWAction.PUTDOWN, null);
+		}
+		else if (curLocObj instanceof TWTile &&
+				 this.carriedTiles.size() < 3 &&
+				 this.getEnvironment().canPickupTile((TWTile) curLocObj, this))
+		{
+			mode = Mode.REACT_COLLECT;
+
+			TWEntity[] goalsArr = new TWEntity[] {this.workingMemory.getObjects()[x][y].getO()};
+			Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
+			this.getEnvironment().receiveMessage(goalMessage);
+
+			planner.getGoals().add(new Int2D(this.x, this.y));
+			return new TWThought(TWAction.PICKUP, null);
+		}
+		// If stumble upon fuel station, refuel if below 75% fuel.
+		// This is different from the fuel management mechanism using the fuelTolerance threshold.
+		else if (curLocObj instanceof TWFuelStation &&
+				 this.fuelLevel < (0.75 * Parameters.defaultFuelLevel))
+		{
+			planner.getGoals().add(new Int2D(this.x, this.y));
+			return new TWThought(TWAction.REFUEL, null);
+		}
+		// Modes which require a TWDirection and plan to be generated
+		else {
+			// getMemory().getClosestObjectInSensorRange(Tile.class);
+			if (mode == Mode.EXPLORE) {
+				// Collect exploration scores for all anchors
+				Int2D anchorGoal = anchors[0];
+				Double max_score = Double.NEGATIVE_INFINITY;
+
+				for (int i = 0; i < anchors.length; i++) {
+					Double curExplorationScore = workingMemory.getAnchorExplorationScore(anchors[i]);
+					Double distToAnchor = this.getDistanceTo(anchors[i].x, anchors[i].y);
+
+					if (curExplorationScore > max_score ||
+					   ((curExplorationScore.equals(max_score)) &&
+						(distToAnchor < this.getDistanceTo(anchorGoal.x, anchorGoal.y)))
+					   ) {
+						max_score = curExplorationScore;
+
+						// If blocked, source for alternative positions with highest exploration score
+						if (workingMemory.isCellBlocked(anchors[i].x, anchors[i].y)) {
+							ArrayList<Int2D> alternativeAnchors = new ArrayList<Int2D>();
+							ArrayList<Double> alternativeScores = new ArrayList<Double>();
+							for (int j = -1; j <= 1; j++) {
+								for (int k = -1; k <= 1; k++) {
+									if (anchors[i].x + j < this.getEnvironment().getxDimension() &&
+										anchors[i].y + k < this.getEnvironment().getyDimension() &&
+										anchors[i].x - j >= 0 &&
+										anchors[i].y + k >= 0 &&
+										!workingMemory.isCellBlocked(anchors[i].x + j, anchors[i].y + k)) {
+										alternativeAnchors.add(new Int2D(anchors[i].x + j, anchors[i].y + k));
+										alternativeScores.add(workingMemory.getAnchorExplorationScore(alternativeAnchors.get(alternativeAnchors.size() - 1)));
+									}
+								}
+							}
+							anchorGoal = alternativeAnchors.get(0);
+							int max_alt = 0;
+							for (int j = 0; j < alternativeAnchors.size(); j++) {
+								if (alternativeScores.get(j) > alternativeScores.get(max_alt)) {
+									anchorGoal = alternativeAnchors.get(j);
+								}
+							}
+						}
+						else {
+							anchorGoal = anchors[i];
+						}
+					}
+				}
+
+				planner.getGoals().add(anchorGoal);
+			}
+			else if (mode == Mode.REFUEL) {
+				planner.getGoals().add(workingMemory.getFuelStation());
+			}
+			else if (mode == Mode.COLLECT) {
+				planner.getGoals().add(new Int2D(closestTile[0].getX(), closestTile[0].getY()));
+			}
+			else if (mode == Mode.FILL) {
+				planner.getGoals().add(new Int2D(closestHole[0].getX(), closestHole[0].getY()));
+			}
+			else if (mode == Mode.ASSIST_COLLECT) {
+				planner.getGoals().add(new Int2D(assistableTiles.peek().getX(), assistableTiles.peek().getY()));
+
+				// Broadcast goal being assisted to indicate contract is no longer available
+				TWEntity[] goalsArr = new TWEntity[] {assistableTiles.peek()};
+				Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
+				this.getEnvironment().receiveMessage(goalMessage);
+			}
+			else if (mode == Mode.ASSIST_FILL) {
+				planner.getGoals().add(new Int2D(assistableHoles.peek().getX(), assistableHoles.peek().getY()));
+
+				// Broadcast goal being assisted to indicate contract is no longer available
+				TWEntity[] goalsArr = new TWEntity[] {assistableHoles.peek()};
+				Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
+				this.getEnvironment().receiveMessage(goalMessage);
+			}
+			else if (mode == Mode.WAIT) {
+				return new TWThought(TWAction.MOVE, TWDirection.Z);
+			}
+
+			planner.generatePlan();
+			if (!planner.hasPlan()) {
+				return new TWThought(TWAction.MOVE, TWDirection.Z);
+			}
+			return new TWThought(TWAction.MOVE, planner.execute());
+		}
     }
 
     /**
      * 按照think中的行动和方向操作agent移动
+     * 可行的行动共4种：
+     * MOVE
+     * PICKUP
+     * PUTDOWN
+     * REFUEL
      */
     @Override
     protected void act(TWThought thought) {
-        //
+        switch (thought.getAction()) {
+            case MOVE:
+                try {
+                    move(thought.getDirection());
+                } catch (CellBlockedException ex) {
+                    // 移动位置上遇到了障碍物，无法移动，应该考虑rethinking
+                    System.out.println("Cell is blocked. Current Position: " + Integer.toString(this.x) + ", " + Integer.toString(this.y));
+                }
+                break;
+            case PICKUP:
+                pickUpTile((TWTile) memory.getMemoryGrid().get(this.x, this.y));
+				planner.getGoals().clear();
+				break;
+            case PUTDOWN:
+				putTileInHole((TWHole) memory.getMemoryGrid().get(this.x, this.y));
+				planner.getGoals().clear();
+				break;
+			case REFUEL:
+				refuel();
+				planner.getGoals().clear();
+				break;
+        }
     }
-
 }

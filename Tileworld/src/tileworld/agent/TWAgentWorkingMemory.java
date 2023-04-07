@@ -477,4 +477,7 @@ public class TWAgentWorkingMemory {
 		return (e instanceof TWObstacle);
 	}
 
+	public TWAgentPercept[][] getObjects() {
+		return objects;
+	}
 }
