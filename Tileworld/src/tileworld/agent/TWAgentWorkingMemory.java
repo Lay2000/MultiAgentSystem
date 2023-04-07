@@ -78,7 +78,7 @@ public class TWAgentWorkingMemory {
 	 * 
 	 * @return agent的观测，包装了时间戳的对象
 	 */
-	public TWAgentPercept[][] getObjects() {
+	public TWAgentPercept[][] getAgentPercept() {
 		return this.objects;
 	}
 
@@ -291,7 +291,7 @@ public class TWAgentWorkingMemory {
 	 * @param type   类型，比如Tile类或hole类
 	 * @return 排好序的优先队列（也可以考虑其他实现）
 	 */
-	private PriorityQueue<TWEntity> getNearbyObjectsWithinBounds(Int2D[] bounds, Class<?> type) {
+	protected PriorityQueue<TWEntity> getNearbyObjectsWithinBounds(Int2D[] bounds, Class<?> type) {
 		// ...............
 		return null;
 	}

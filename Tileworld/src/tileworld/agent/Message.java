@@ -4,9 +4,6 @@ package tileworld.agent;
  * Customized Message class for transferring a list of blocks.
  */
 public class Message {
-	public enum msgType {
-		mapInfo, goalInfo, contractInfo_tile, contractInfo_hole
-	}
 
 	private int sender;
 
@@ -20,9 +17,9 @@ public class Message {
 		return receiver;
 	}
 
-	private msgType messageType;
+	private MsgType messageType;
 
-	public msgType getMessageType() {
+	public MsgType getMessageType() {
 		return messageType;
 	}
 
@@ -40,11 +37,15 @@ public class Message {
 	 * @param messageType    one of the msgType, indicating message purpose.
 	 * @param messageContent object list so that anything can fit into it.
 	 */
-	public Message(int sender, int receiver, msgType messageType, Object[] messageContent) {
+	public Message(int sender, int receiver, MsgType messageType, Object[] messageContent) {
 		this.sender = sender;
 		this.receiver = receiver;
 		this.messageType = messageType;
 		this.messageContent = messageContent;
 	}
 
+}
+
+enum MsgType {
+	agentInfo, goalInfo, contractInfo_tile, contractInfo_hole
 }
