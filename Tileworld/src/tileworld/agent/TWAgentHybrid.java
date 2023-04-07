@@ -428,6 +428,11 @@ public class TWAgentHybrid extends TWAgent {
         }
     }
 
+    /**
+     * 计算TSP距离，用于比较两个对象之间的距离
+     * @param o 要计算距离的目标实体
+     * @return 返回TSP距离
+     */
     public double getTSPDistance(TWEntity o) {
         double oDist = getDistanceTo(o);
         // Modifies Manhattan distance by lifetime remaining, so between two equidistant objects, the one with a shorter lifetime is closer
@@ -436,42 +441,212 @@ public class TWAgentHybrid extends TWAgent {
         }
         return oDist;
     }
+
+    /**
+     * 初始化分配区域,并初始化closestTile和closestHole
+     */
+    private void assignZoneAndFindEntities() {
+        if (bounds[0] != null) {
+            return;
+        }
+        assignZone(this.getEnvironment().getxDimension(), this.getEnvironment().getyDimension());
+        tilesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWTile().getClass());
+        holesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWHole().getClass());
+        while (!tilesInZone.isEmpty()) {
+            TWEntity tile = tilesInZone.poll();
+            double distToTile = this.getDistanceTo(tile);
+            if (!(workingMemory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile)) {
+                possibleTileGoals.add(tile);
+            }
+        }
+        while (!holesInZone.isEmpty()) {
+            TWEntity hole = holesInZone.poll();
+            double distToHole = this.getDistanceTo(hole);
+            if (!(workingMemory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole)) {
+                possibleHoleGoals.add(hole);
+            }
+        }
+        closestTile = new TWEntity[possibleTileGoals.size()];
+        closestHole = new TWEntity[possibleHoleGoals.size()];
+        closestTile = possibleTileGoals.toArray(closestTile);
+        closestHole = possibleHoleGoals.toArray(closestHole);
+    }
+
+    /**
+     * 获取可协助的对象
+     * @return 返回一个列表，其中包含可协助收集的tile和可协助填充的hole
+     */
+    private List<PriorityQueue<TWEntity>> getAssistableObjects() {
+        Comparator<TWEntity> distHeur = new Comparator<TWEntity>() {
+            public int compare(TWEntity o1, TWEntity o2) {
+                return (int) (getTSPDistance(o1) - getTSPDistance(o2));
+            }
+        };
+        PriorityQueue<TWEntity> assistableTiles = new PriorityQueue<TWEntity>(10, distHeur);
+        PriorityQueue<TWEntity> assistableHoles = new PriorityQueue<TWEntity>(10, distHeur);
+
+        ArrayList<Message> messages = this.getEnvironment().getMessages();
+        for (int i = 0; i < messages.size(); i++) {
+            Message message = messages.get(i);
+            if (message.getSender() != agentID &&
+                    message.getReceiver() == 0) {
+                if (message.getMessageType() == MsgType.contractInfo_tile) {
+                    mergeContracts(assistableTiles, (TWEntity[]) message.getMessageContent()[0], (int) message.getMessageContent()[1]);
+                } else if (message.getMessageType() == MsgType.contractInfo_hole) {
+                    mergeContracts(assistableHoles, (TWEntity[]) message.getMessageContent()[0], (int) message.getMessageContent()[1]);
+                }
+            }
+        }
+
+        for (int i = 0; i < messages.size(); i++) {
+            Message message = messages.get(i);
+            if (message.getSender() != agentID &&
+                    message.getReceiver() == 0 &&
+                    message.getMessageType() == MsgType.goalInfo) {
+                TWEntity[] announcedGoals = (TWEntity[]) message.getMessageContent();
+                for (int j = 0; j < announcedGoals.length; j++) {
+                    if (announcedGoals[j] instanceof TWTile) {
+                        assistableTiles.remove(announcedGoals[j]);
+                        possibleTileGoals.remove(announcedGoals[j]);
+                    } else if (announcedGoals[j] instanceof TWHole) {
+                        assistableHoles.remove(announcedGoals[j]);
+                        possibleHoleGoals.remove(announcedGoals[j]);
+                    }
+                }
+            }
+        }
+
+        List<PriorityQueue<TWEntity>> result = new ArrayList<>();
+        result.add(assistableTiles);
+        result.add(assistableHoles);
+
+        return result;
+    }
+
+    /**
+     * 获取锚点目标
+     * @return 返回具有最高探索得分的锚点, 用于生成探索路径
+     */
+    private Int2D getAnchorGoal() {
+        // 收集所有锚点的探索分数
+        Int2D anchorGoal = anchors[0];
+        Double max_score = Double.NEGATIVE_INFINITY;
+
+        for (int i = 0; i < anchors.length; i++) {
+            Double curExplorationScore = workingMemory.getAnchorExplorationScore(anchors[i]);
+            Double distToAnchor = this.getDistanceTo(anchors[i].x, anchors[i].y);
+
+            if (curExplorationScore > max_score ||
+                    ((curExplorationScore.equals(max_score)) &&
+                            (distToAnchor < this.getDistanceTo(anchorGoal.x, anchorGoal.y)))
+            ) {
+                max_score = curExplorationScore;
+
+                // 如果被阻挡，寻找具有最高探索得分的替代位置
+                if (workingMemory.isCellBlocked(anchors[i].x, anchors[i].y)) {
+                    ArrayList<Int2D> alternativeAnchors = new ArrayList<Int2D>();
+                    ArrayList<Double> alternativeScores = new ArrayList<Double>();
+                    for (int j = -1; j <= 1; j++) {
+                        for (int k = -1; k <= 1; k++) {
+                            if (anchors[i].x + j < this.getEnvironment().getxDimension() &&
+                                    anchors[i].y + k < this.getEnvironment().getyDimension() &&
+                                    anchors[i].x - j >= 0 &&
+                                    anchors[i].y + k >= 0 &&
+                                    !workingMemory.isCellBlocked(anchors[i].x + j, anchors[i].y + k)) {
+                                alternativeAnchors.add(new Int2D(anchors[i].x + j, anchors[i].y + k));
+                                alternativeScores.add(workingMemory.getAnchorExplorationScore(alternativeAnchors.get(alternativeAnchors.size() - 1)));
+                            }
+                        }
+                    }
+                    anchorGoal = alternativeAnchors.get(0);
+                    int max_alt = 0;
+                    for (int j = 0; j < alternativeAnchors.size(); j++) {
+                        if (alternativeScores.get(j) > alternativeScores.get(max_alt)) {
+                            anchorGoal = alternativeAnchors.get(j);
+                        }
+                    }
+                }
+                else {
+                    anchorGoal = anchors[i];
+                }
+            }
+        }
+        return anchorGoal;
+    }
+
+    /**
+     * 根据Agent当前状态设置行动模式Mode
+     * @param assistableTiles 可协助收集的瓦片
+     * @param assistableHoles 可协助填充的洞
+     */
+    private void setMode(PriorityQueue<TWEntity> assistableTiles, PriorityQueue<TWEntity> assistableHoles) {
+        // 默认模式
+        mode = Mode.EXPLORE;
+
+        // 如果已经找到加油站并且燃料不足，加油优先级最高
+        if (workingMemory.getFuelStation() != null && this.getDistanceTo(workingMemory.getFuelStation().x, workingMemory.getFuelStation().y) >= this.fuelLevel * fuelTolerance) {
+            mode = Mode.REFUEL;
+        }
+        // 如果尚未找到加油站，探索优先级最高
+        else if (workingMemory.getFuelStation() == null) {
+            mode = Mode.EXPLORE;
+        }
+//        // 下列代码感觉可以删除
+//        else if (this.fuelLevel <= this.hardFuelLimit) {
+//            // 极其罕见的情况，即在第一阶段探索过程中未发现加油站
+//            // 代理等待其他代理完成他们的区域探索，希望能找到加油站
+//            // 如果加油站在此代理的区域内，其他代理必须协助探索
+//            // 此区域剩余部分，希望有足够的燃料来支持
+//            // (ASSIST_EXPLORE 尚未编程，需要向环境广播剩余探索地图)
+//            if (workingMemory.getFuelStation() == null) {
+//                mode = Mode.WAIT;
+//            }
+//            else {
+//                mode = Mode.REFUEL;
+//            }
+//        }
+        // 如果没有tile并且附近有tile，收集tile，否则探索
+        else if (!this.hasTile()) {
+            if (closestTile.length > 0) {
+                mode = Mode.COLLECT;
+            }
+            else if (allowAssistance && !assistableTiles.isEmpty()) {
+                mode = Mode.ASSIST_COLLECT;
+            }
+        }
+        // 如果有tile并且附近有一个hole，优先填充hole
+        else if (closestHole.length > 0) {
+            if (closestTile.length == 0 ||
+                    (getTSPDistance(closestHole[0]) <= getTSPDistance(closestTile[0])) ||
+                    this.carriedTiles.size() >= 3) {
+                mode = Mode.FILL;
+            }
+            else {
+                mode = Mode.COLLECT;
+            }
+        }
+        // 如果未达到最大数量的tile且附近只有tile，收集tile
+        else if (closestTile.length > 0 && this.carriedTiles.size() < 3) {
+            mode = Mode.COLLECT;
+        }
+        // 如果自己的区域没有瓦片和洞，但相邻区域有可协助的洞，
+        // 协助相邻区域的代理填充洞
+        else if (allowAssistance && !assistableHoles.isEmpty()) {
+            mode = Mode.ASSIST_FILL;
+        }
+    }
+
+
     /**
      * 主要的思考函数
+     * @return 返回TWThought对象, Agent的act方法接受这个对象并做出对应的行动
      */
     @Override
     protected TWThought think() {
-        // 然后进行知识共享，发送message进行记忆合并
-        // 分析招标协助，把可能的标加入可协助表，并广播
-        // 接收广播，解决可能的冲突
-        // 思考行动模式（可以按他们ppt里的大逻辑图来）
-        // 重新思考行动计划（包括清除现有计划、检查当前位置、按照当前位置信息和行动模式来确定最终的goal，并使用planner生成路径，得到行动方向）
-        // 
-        if (bounds[0] == null) {
-			assignZone(this.getEnvironment().getxDimension(), this.getEnvironment().getyDimension());
-			tilesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWTile().getClass());
-			holesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWHole().getClass());
-			while (!tilesInZone.isEmpty()) {
-				TWEntity tile = tilesInZone.poll();
-				double distToTile = this.getDistanceTo(tile);
-				if (!(workingMemory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile)) {
-					possibleTileGoals.add(tile);
-				}
-			}
-			while (!holesInZone.isEmpty()) {
-				TWEntity hole = holesInZone.poll();
-				double distToHole = this.getDistanceTo(hole);
-				if (!(workingMemory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole)) {
-					possibleHoleGoals.add(hole);
-				}
-			}
-			closestTile = new TWEntity[possibleTileGoals.size()];
-			closestHole = new TWEntity[possibleHoleGoals.size()];
-			closestTile = possibleTileGoals.toArray(closestTile);
-			closestHole = possibleHoleGoals.toArray(closestHole);
-		}
+        // [初始化] 初始化划分区域, 设置默认的closestTile和closestHole
+        assignZoneAndFindEntities();
 
-		// Merge all shared maps before any further deliberation
+		// [知识共享] 获取环境中的所有Messages,并将类别是agentInfo(MAP)的MessageContent合并到自己的workingMemory里面
 		ArrayList<Message> messages = this.getEnvironment().getMessages();
 		for (int i = 0; i < messages.size(); i++) {
 			Message message = messages.get(i);
@@ -482,115 +657,25 @@ public class TWAgentHybrid extends TWAgent {
 			}
 		}
 
-		// Check environment for available contracts
-		Comparator<TWEntity> distHeur = new Comparator<TWEntity>() {
-			public int compare(TWEntity o1, TWEntity o2) {
-				   return (int) (getTSPDistance(o1) - getTSPDistance(o2));
-			}
-		};
-		PriorityQueue<TWEntity> assistableTiles = new PriorityQueue<TWEntity>(10, distHeur);
-		PriorityQueue<TWEntity> assistableHoles = new PriorityQueue<TWEntity>(10, distHeur);
-		for (int i = 0; i < messages.size(); i++) {
-			Message message = (Message) messages.get(i);
-			if (message.getSender() != agentID &&
-				message.getReceiver() == 0) {
-				if (message.getMessageType() == MsgType.contractInfo_tile) {
-					mergeContracts(assistableTiles, (TWEntity[]) message.getMessageContent()[0], (int) message.getMessageContent()[1]);
-				}
-				else if (message.getMessageType() == MsgType.contractInfo_hole) {
-					mergeContracts(assistableHoles, (TWEntity[]) message.getMessageContent()[0], (int) message.getMessageContent()[1]);
-				}
-			}
-		}
+		// [获取可协同的目标] 从Messages中找到可协助的assitableTiles和assitableHoles, 并移除有conflict的object(也即是别的Agent的Goal)
+        List<PriorityQueue<TWEntity>> assistableObjects = getAssistableObjects();
+        PriorityQueue<TWEntity> assistableTiles = assistableObjects.get(0);
+        PriorityQueue<TWEntity> assistableHoles = assistableObjects.get(1);
 
-		// Remove announced goals from goal and contract lists to prevent goal collisions
-		for (int i = 0; i < messages.size(); i++) {
-			Message message = (Message) messages.get(i);
-			if (message.getSender() != agentID &&
-				message.getReceiver() == 0 &&
-				message.getMessageType() == MsgType.goalInfo) {
-				TWEntity[] announcedGoals = (TWEntity[]) message.getMessageContent();
-				for (int j = 0; j < announcedGoals.length; j++) {
-					if (announcedGoals[j] instanceof TWTile) {
-						assistableTiles.remove(announcedGoals[j]);
-						possibleTileGoals.remove(announcedGoals[j]);
-					}
-					else if (announcedGoals[j] instanceof TWHole) {
-						assistableHoles.remove(announcedGoals[j]);
-						possibleHoleGoals.remove(announcedGoals[j]);
-					}
-				}
-			}
-		}
+        // [设置当前行动模式] 设置Agent的行动模式
+		setMode(assistableTiles, assistableHoles);
 
-		// Default Mode
-		mode = Mode.EXPLORE;
-
-		// Refueling takes utmost priority if fuel station already found and low on fuel
-		if (workingMemory.getFuelStation() != null && this.getDistanceTo(workingMemory.getFuelStation().x, workingMemory.getFuelStation().y) >= this.fuelLevel * fuelTolerance) {
-			mode = Mode.REFUEL;
-		}
-		// If fuel station not yet found, exploration takes highest priority
-		else if (workingMemory.getFuelStation() == null) {
-			mode = Mode.EXPLORE;
-		}
-		else if (this.fuelLevel <= this.hardFuelLimit) {
-			// Extremely rare scenario where fuel station is not found during first exploration phase
-			// Agent waits until other agents finishes exploring their zones and hopefully finds the fuel station
-			// In the event fuel station is in this agent's zone, other agents have to assist exploring
-			// the remaining parts of this zone, hopefully with enough fuel to spare
-			// (ASSIST_EXPLORE not programmed in yet, requires broadcasting remaining exploration map to environment)
-			if (workingMemory.getFuelStation() == null) {
-				mode = Mode.WAIT;
-			}
-			else {
-				mode = Mode.REFUEL;
-			}
-		}
-		// If no tile and tile nearby, collect tile else explore
-		else if (!this.hasTile()) {
-			if (closestTile.length > 0) {
-				mode = Mode.COLLECT;
-			}
-			else if (allowAssistance && !assistableTiles.isEmpty()) {
-				mode = Mode.ASSIST_COLLECT;
-			}
-		}
-		// If agent has tile and there is a hole nearby, prioritize filling hole
-		else if (closestHole.length > 0) {
-			if (closestTile.length == 0 ||
-				(getTSPDistance(closestHole[0]) <= getTSPDistance(closestTile[0])) ||
-				this.carriedTiles.size() >= 3) {
-				mode = Mode.FILL;
-			}
-			else {
-				mode = Mode.COLLECT;
-			}
-		}
-		// If not at maximum number of tiles and there is only tile(s) nearby, collect tile(s)
-		else if (closestTile.length > 0 && this.carriedTiles.size() < 3) {
-			mode = Mode.COLLECT;
-		}
-		// If no tiles and holes in own zone, but there are assistable holes in a neighboring zone,
-		// assist agent in neighboring zone to fill holes
-		else if (allowAssistance && !assistableHoles.isEmpty()) {
-			mode = Mode.ASSIST_FILL;
-		}
-
-		// Deletes plan and reevaluate goals every step rather than checking for new/decayed tiles/holes/obstacles
-		// and changing existing plan
+        // [设置单步行动计划] 根据行动模式mode设置细粒度的行动计划: 每一步删除计划并重新评估目标，而不是检查新的/衰减的tile
 		planner.getGoals().clear();
 		planner.voidPlan();
 
-		// Always checks if possible to pickup/fill/refuel even when prioritizing
-		// exploration
+        // 即使在优先考虑探索的情况下，始终检查是否可以拾起/填充/加油
 		Object curLocObj = this.memory.getMemoryGrid().get(x, y);
 		if (curLocObj instanceof TWHole &&
 			this.getEnvironment().canPutdownTile((TWHole) curLocObj, this)) {
 			mode = Mode.REACT_FILL;
-
-			// Announce goal as there is possibility target is not in purview of own's zone and is encountered enroute to or from refueling
-			// If so, there may be a possibility of goal collision
+            // 宣布目标，因为可能目标不在自己区域的视野范围内，而是在前往或离开加油站的途中遇到的
+            // 如果是这样，可能会出现目标冲突的情况
 			TWEntity[] goalsArr = new TWEntity[] {this.workingMemory.getObjects()[x][y].getO()};
 			Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
 			this.getEnvironment().receiveMessage(goalMessage);
@@ -611,62 +696,20 @@ public class TWAgentHybrid extends TWAgent {
 			planner.getGoals().add(new Int2D(this.x, this.y));
 			return new TWThought(TWAction.PICKUP, null);
 		}
-		// If stumble upon fuel station, refuel if below 75% fuel.
-		// This is different from the fuel management mechanism using the fuelTolerance threshold.
+        // 如果偶然碰到加油站，燃料不足75%时加油。
+        // 这与使用fuelTolerance阈值的燃料管理机制不同
 		else if (curLocObj instanceof TWFuelStation &&
 				 this.fuelLevel < (0.75 * Parameters.defaultFuelLevel))
 		{
 			planner.getGoals().add(new Int2D(this.x, this.y));
 			return new TWThought(TWAction.REFUEL, null);
 		}
-		// Modes which require a TWDirection and plan to be generated
+        // 需要生成TWDirection和计划的模式
 		else {
 			// getMemory().getClosestObjectInSensorRange(Tile.class);
 			if (mode == Mode.EXPLORE) {
-				// Collect exploration scores for all anchors
-				Int2D anchorGoal = anchors[0];
-				Double max_score = Double.NEGATIVE_INFINITY;
-
-				for (int i = 0; i < anchors.length; i++) {
-					Double curExplorationScore = workingMemory.getAnchorExplorationScore(anchors[i]);
-					Double distToAnchor = this.getDistanceTo(anchors[i].x, anchors[i].y);
-
-					if (curExplorationScore > max_score ||
-					   ((curExplorationScore.equals(max_score)) &&
-						(distToAnchor < this.getDistanceTo(anchorGoal.x, anchorGoal.y)))
-					   ) {
-						max_score = curExplorationScore;
-
-						// If blocked, source for alternative positions with highest exploration score
-						if (workingMemory.isCellBlocked(anchors[i].x, anchors[i].y)) {
-							ArrayList<Int2D> alternativeAnchors = new ArrayList<Int2D>();
-							ArrayList<Double> alternativeScores = new ArrayList<Double>();
-							for (int j = -1; j <= 1; j++) {
-								for (int k = -1; k <= 1; k++) {
-									if (anchors[i].x + j < this.getEnvironment().getxDimension() &&
-										anchors[i].y + k < this.getEnvironment().getyDimension() &&
-										anchors[i].x - j >= 0 &&
-										anchors[i].y + k >= 0 &&
-										!workingMemory.isCellBlocked(anchors[i].x + j, anchors[i].y + k)) {
-										alternativeAnchors.add(new Int2D(anchors[i].x + j, anchors[i].y + k));
-										alternativeScores.add(workingMemory.getAnchorExplorationScore(alternativeAnchors.get(alternativeAnchors.size() - 1)));
-									}
-								}
-							}
-							anchorGoal = alternativeAnchors.get(0);
-							int max_alt = 0;
-							for (int j = 0; j < alternativeAnchors.size(); j++) {
-								if (alternativeScores.get(j) > alternativeScores.get(max_alt)) {
-									anchorGoal = alternativeAnchors.get(j);
-								}
-							}
-						}
-						else {
-							anchorGoal = anchors[i];
-						}
-					}
-				}
-
+                // 收集所有锚点的探索分数
+				Int2D anchorGoal = getAnchorGoal();
 				planner.getGoals().add(anchorGoal);
 			}
 			else if (mode == Mode.REFUEL) {
@@ -681,7 +724,7 @@ public class TWAgentHybrid extends TWAgent {
 			else if (mode == Mode.ASSIST_COLLECT) {
 				planner.getGoals().add(new Int2D(assistableTiles.peek().getX(), assistableTiles.peek().getY()));
 
-				// Broadcast goal being assisted to indicate contract is no longer available
+                // 广播正在协助的目标，表明contract不再可用
 				TWEntity[] goalsArr = new TWEntity[] {assistableTiles.peek()};
 				Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
 				this.getEnvironment().receiveMessage(goalMessage);
@@ -689,7 +732,7 @@ public class TWAgentHybrid extends TWAgent {
 			else if (mode == Mode.ASSIST_FILL) {
 				planner.getGoals().add(new Int2D(assistableHoles.peek().getX(), assistableHoles.peek().getY()));
 
-				// Broadcast goal being assisted to indicate contract is no longer available
+                // 广播正在协助的目标，表明contract不再可用
 				TWEntity[] goalsArr = new TWEntity[] {assistableHoles.peek()};
 				Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
 				this.getEnvironment().receiveMessage(goalMessage);
@@ -708,7 +751,7 @@ public class TWAgentHybrid extends TWAgent {
 
     /**
      * 按照think中的行动和方向操作agent移动
-     * 可行的行动共4种：
+     * 可行的单步行动共4种：
      * MOVE
      * PICKUP
      * PUTDOWN
