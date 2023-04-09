@@ -1,9 +1,6 @@
 package tileworld.agent;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.PriorityQueue;
+import java.util.*;
 
 import sim.engine.Schedule;
 import sim.field.grid.ObjectGrid2D;
@@ -195,6 +192,8 @@ public class TWAgentWorkingMemory {
 		this.objects = new TWAgentPercept[mapx][mapy];
 		this.schedule = schedule;
 		this.memoryGrid = new ObjectGrid2D(mapx, mapy);
+
+		this.closestInSensorRange = new HashMap<>();
 	}
 
 	// ==============================================================================
@@ -230,6 +229,7 @@ public class TWAgentWorkingMemory {
 		 * 首先需要衰减记忆
 		 */
 		// ..........................
+		decayMemory();
 
 		/*
 		 * 遍历记忆中此感受野中的物体，将其放入previousSensedObj中供之后比较用，同时清除记忆中的这些物品。
@@ -241,6 +241,12 @@ public class TWAgentWorkingMemory {
 		for (int i = 0; i <= Parameters.defaultSensorRange * 2; i++) {
 			for (int j = 0; j <= Parameters.defaultSensorRange * 2; j++) {
 				// .................
+				if (i + visibleX_min >= 0 && i + visibleX_min < memoryGrid.getWidth()
+						&& j + visibleY_min >= 0 && j + visibleY_min < memoryGrid.getHeight()) {
+					previousSensedObj[i][j] = objects[i + visibleX_min][j + visibleY_min];
+					objects[i + visibleX_min][j + visibleY_min] = null;
+					memoryGrid.set(i + visibleX_min, j + visibleY_min, null);
+				}
 			}
 		}
 
@@ -252,13 +258,38 @@ public class TWAgentWorkingMemory {
 		 */
 		for (int i = 0; i < sensedObjects.size(); i++) {
 			// .....................
-
+			Object o = sensedObjects.get(i);
+			int x = objectXCoords.get(i);
+			int y = objectYCoords.get(i);
+			if (o instanceof TWEntity) {
+				if (o instanceof TWFuelStation && fuelStation == null) {
+					setFuelStation(x, y);
+				}
+				TWEntity obj = (TWEntity) o;
+				if (objects[x][y] == null) {
+					objects[x][y] = new TWAgentPercept(obj, schedule.getTime());
+				} else if (objects[x][y].getO() == obj) {
+					objects[x][y].setT(schedule.getTime());
+				}
+				memoryGrid.set(x, y, objects[x][y]);
+				updateClosest(obj);
+			}
 		}
 
 		/*
 		 * 遍历参数中提供的agent，更新neighbouringAgents
 		 */
 		// ..........................
+		neighbouringAgents.clear();
+		for (int i = 0; i < sensedAgents.size(); i++) {
+			Object o = sensedAgents.get(i);
+			assert o instanceof TWAgent;
+			TWAgent agent = (TWAgent) o;
+			int x = agentXCoords.get(i);
+			int y = agentYCoords.get(i);
+			if (agent != mySelf) {
+				neighbouringAgents.add(agent);}
+		}
 	}
 
 	/**
@@ -271,6 +302,20 @@ public class TWAgentWorkingMemory {
 	 */
 	public void mergeMemory(TWAgentPercept[][] objectsShared, Int2D agentPos) {
 		// ...............
+		for (int i = 0; i < memoryGrid.getWidth(); i++) {
+			for (int j = 0; j < memoryGrid.getHeight(); j++) {
+				if (objectsShared[i][j] != null) {
+					if (objectsShared[i][j].getO() instanceof TWFuelStation && fuelStation == null) {
+						setFuelStation(i, j);
+					} else if (objects[i][j] == null) {
+						objects[i][j] = objectsShared[i][j];
+						memoryGrid.set(i, j, objects[i][j]);
+					} else if (objects[i][j].newerFact(objectsShared[i][j])) {
+						objects[i][j].setT(objectsShared[i][j].getT());
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -279,6 +324,19 @@ public class TWAgentWorkingMemory {
 	 */
 	public void decayMemory() {
 		// .......................
+		for (int i = 0; i < memoryGrid.getWidth(); i++) {
+			for (int j = 0; j < memoryGrid.getHeight(); j++) {
+				if (objects[i][j] != null) {
+					if (getEstimatedRemainingLifetime(objects[i][j].getO(), 1.) > 0) {
+						explorationScore[i][j] += 1;
+					} else {
+						objects[i][j] = null;
+						memoryGrid.set(i, j, null);
+						explorationScore[i][j] = Double.MAX_VALUE;
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -293,7 +351,20 @@ public class TWAgentWorkingMemory {
 	 */
 	protected PriorityQueue<TWEntity> getNearbyObjectsWithinBounds(Int2D[] bounds, Class<?> type) {
 		// ...............
-		return null;
+		PriorityQueue<TWEntity> entities = new PriorityQueue<>(Comparator.comparingDouble(o -> getTSPDistance(mySelf, o, true)));
+		int x1 = bounds[0].x;
+		int y1 = bounds[0].y;
+		int x2 = bounds[2].x;
+		int y2 = bounds[2].y;
+		for (int i = x1; i <= x2; i++) {
+			for (int j = y1; j <= y2; j++) {
+				TWEntity o = objects[i][j].getO();
+				if (type.isInstance(o)) {
+					entities.add(o);
+				}
+			}
+		}
+		return entities;
 	}
 
 	/**
@@ -305,12 +376,22 @@ public class TWAgentWorkingMemory {
 	 */
 	public Double getAnchorExplorationScore(Int2D anchor) {
 		// ......................
-		return null;
+		double score = 0;
+		int exploreCnt = 0;
+		for (int i = anchor.x - Parameters.defaultSensorRange; i <= anchor.x + Parameters.defaultSensorRange; i++) {
+			for (int j = anchor.y - Parameters.defaultSensorRange; j <= anchor.y + Parameters.defaultSensorRange; j++) {
+				if (i >= 0 && i < memoryGrid.getWidth() && j >= 0 && j < memoryGrid.getHeight()) {
+					exploreCnt++;
+					score = score * (1. - 1. / exploreCnt) + explorationScore[i][j] * (1. / exploreCnt);
+				}
+			}
+		}
+		return score;
 	}
 
 	/**
 	 * 返回预估剩余时间。（原代码，可根据需求更改）
-	 * 
+	 *
 	 * @param o         物体实例
 	 * @param threshold 超参数
 	 * @return 浮点数时间
@@ -328,7 +409,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 用预估时间来调整距离因子，比如让快消失对象的距离因子变短以便提前探索
-	 * 
+	 *
 	 * @param a            agent
 	 * @param b            对象
 	 * @param TSPHeuristic 是否加入因子修正
@@ -347,7 +428,7 @@ public class TWAgentWorkingMemory {
 	/**
 	 * 没用到
 	 * updates memory using 2d array of sensor range - currently not used
-	 * 
+	 *
 	 * @see TWAgentWorkingMemory updateMemory(sim.util.Bag, sim.util.IntBag,
 	 *      sim.util.IntBag)
 	 */
@@ -361,7 +442,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 清除‘观测’记忆中特定位置的东西
-	 * 
+	 *
 	 * @param x x坐标
 	 * @param y y坐标
 	 */
@@ -371,7 +452,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 清除清除‘观测’记忆中一个特定的物品实例。
-	 * 
+	 *
 	 * @param o 物品实例
 	 */
 	public void removeObject(TWEntity o) {
@@ -460,7 +541,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * Is the cell blocked according to our memory?
-	 * 
+	 *
 	 * @param tx x position of cell
 	 * @param ty y position of cell
 	 * @return true if the cell is blocked in our memory
