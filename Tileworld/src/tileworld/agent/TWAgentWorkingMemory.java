@@ -29,7 +29,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 获取当前时间戳
-	 * 
+	 *
 	 * @return 浮点数时间
 	 */
 	private double getSimulationTime() {
@@ -56,7 +56,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 获取主记忆存储网格
-	 * 
+	 *
 	 * @return 网格对象
 	 */
 	public ObjectGrid2D getMemoryGrid() {
@@ -72,7 +72,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 获取副观测列表
-	 * 
+	 *
 	 * @return agent的观测，包装了时间戳的对象
 	 */
 	public TWAgentPercept[][] getAgentPercept() {
@@ -87,7 +87,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 返回加油站坐标
-	 * 
+	 *
 	 * @return 加油站坐标
 	 */
 	public Int2D getFuelStation() {
@@ -96,7 +96,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 设置加油站坐标
-	 * 
+	 *
 	 * @param x 加油站x
 	 * @param y 加油站y
 	 */
@@ -123,7 +123,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 更新感受野中最近的物品
-	 * 
+	 *
 	 * @param o 物体实例
 	 */
 	private void updateClosest(TWEntity o) {
@@ -149,7 +149,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 返回最近的一个agent
-	 * 
+	 *
 	 * @return 那个agent
 	 */
 	public TWAgent getNeighbour() {
@@ -212,7 +212,7 @@ public class TWAgentWorkingMemory {
 	 *
 	 * Also note that currently the agent has no sense of moving objects, so
 	 * an agent may remember the same object at two locations simultaneously.
-	 * 
+	 *
 	 * Other agents in the grid are sensed and passed to this function. But it
 	 * is currently not used for anything. Do remember that an agent sense itself
 	 * too.
@@ -225,7 +225,7 @@ public class TWAgentWorkingMemory {
 	 * @param agentYCoords  bag containing y coordinates of agents
 	 */
 	public void updateMemory(Bag sensedObjects, IntBag objectXCoords, IntBag objectYCoords, Bag sensedAgents,
-			IntBag agentXCoords, IntBag agentYCoords) {
+							 IntBag agentXCoords, IntBag agentYCoords) {
 		/*
 		 * 首先需要衰减记忆
 		 */
@@ -268,12 +268,15 @@ public class TWAgentWorkingMemory {
 					setFuelStation(x, y);
 				}
 				TWEntity obj = (TWEntity) o;
-				if (objects[x][y] == null) {
+				TWAgentPercept prev = previousSensedObj[x-visibleX_min][y-visibleY_min];
+				if (prev == null) {
 					objects[x][y] = new TWAgentPercept(obj, schedule.getTime());
-				} else if (objects[x][y].getO() == obj) {
+					memoryGrid.set(x, y, objects[x][y].getO());
+				} else if (prev.getO().getClass() == obj.getClass()) {
+					objects[x][y] = prev;
 					objects[x][y].setT(schedule.getTime());
+					memoryGrid.set(x, y, objects[x][y].getO());
 				}
-				memoryGrid.set(x, y, objects[x][y]);
 				updateClosest(obj);
 			}
 		}
@@ -292,13 +295,13 @@ public class TWAgentWorkingMemory {
 			if (agent != mySelf) {
 				neighbouringAgents.add(agent);
 			}
-			for (int i = x - Parameters.defaultSensorRange; i <= x + Parameters.defaultSensorRange; i++) {
-				for (int j = y - Parameters.defaultSensorRange; j <= y + Parameters.defaultSensorRange; j++) {
-					if (mySelf.getEnvironment().isInBounds(i, j)) {
-						explorationScore[i][j] = 0.0;
-					}
-				}
-			}
+//			for (int i = x - Parameters.defaultSensorRange; i <= x + Parameters.defaultSensorRange; i++) {
+//				for (int j = y - Parameters.defaultSensorRange; j <= y + Parameters.defaultSensorRange; j++) {
+//					if (mySelf.getEnvironment().isInBounds(i, j)) {
+//						explorationScore[i][j] = 0.0;
+//					}
+//				}
+//			}
 		}
 	}
 
@@ -306,7 +309,7 @@ public class TWAgentWorkingMemory {
 	 * 整合记忆。根据参数中提供的别的agent的记忆更新自己的记忆。
 	 * 注意处理交叉冲突部分，比如优先自己的感知而非他人记忆
 	 * 注意处理特殊点位比如加油站
-	 * 
+	 *
 	 * @param objectsShared 别人的记忆，是全图的大小的数组
 	 * @param agentPos      别人的位置
 	 */
@@ -319,7 +322,7 @@ public class TWAgentWorkingMemory {
 						setFuelStation(i, j);
 					} else if (objects[i][j] == null) {
 						objects[i][j] = objectsShared[i][j];
-						memoryGrid.set(i, j, objects[i][j]);
+						memoryGrid.set(i, j, objects[i][j].getO());
 					} else if (objects[i][j].newerFact(objectsShared[i][j])) {
 						objects[i][j].setT(objectsShared[i][j].getT());
 					}
@@ -361,7 +364,7 @@ public class TWAgentWorkingMemory {
 	 * 比如一个包含了自己区域内所有tile的列表
 	 * 列表为PriorityQueue，用于根据tile的属性（比如距离agent多远）来排序
 	 * 源代码中使用下文提供的getTSPDistance()来判断比较
-	 * 
+	 *
 	 * @param bounds 包含了区域四个角坐标的数组（左上-右上-右下-左下）
 	 * @param type   类型，比如Tile类或hole类
 	 * @return 排好序的优先队列（也可以考虑其他实现）
@@ -389,7 +392,7 @@ public class TWAgentWorkingMemory {
 	/**
 	 * 遍历一个锚点区域内所有块的探索的得分来得出锚点整体的探索得分
 	 * 用于评估一个锚点区域的探索度，以便优先探索
-	 * 
+	 *
 	 * @param anchor 锚点坐标
 	 * @return 浮点数探索得分
 	 */
