@@ -242,8 +242,7 @@ public class TWAgentWorkingMemory {
 		for (int i = 0; i <= Parameters.defaultSensorRange * 2; i++) {
 			for (int j = 0; j <= Parameters.defaultSensorRange * 2; j++) {
 				// .................
-				if (i + visibleX_min >= 0 && i + visibleX_min < memoryGrid.getWidth()
-						&& j + visibleY_min >= 0 && j + visibleY_min < memoryGrid.getHeight()) {
+				if (mySelf.getEnvironment().isInBounds(i + visibleX_min, j + visibleY_min)) {
 					previousSensedObj[i][j] = objects[i + visibleX_min][j + visibleY_min];
 					this.explorationScore[i + visibleX_min][j + visibleY_min] = 0.0;
 					objects[i + visibleX_min][j + visibleY_min] = null;
@@ -284,14 +283,22 @@ public class TWAgentWorkingMemory {
 		 */
 		// ..........................
 		neighbouringAgents.clear();
-		for (int i = 0; i < sensedAgents.size(); i++) {
-			Object o = sensedAgents.get(i);
+		for (int k = 0; k < sensedAgents.size(); k++) {
+			Object o = sensedAgents.get(k);
 			assert o instanceof TWAgent;
 			TWAgent agent = (TWAgent) o;
-			int x = agentXCoords.get(i);
-			int y = agentYCoords.get(i);
+			int x = agentXCoords.get(k);
+			int y = agentYCoords.get(k);
 			if (agent != mySelf) {
-				neighbouringAgents.add(agent);}
+				neighbouringAgents.add(agent);
+			}
+			for (int i = x - Parameters.defaultSensorRange; i <= x + Parameters.defaultSensorRange; i++) {
+				for (int j = y - Parameters.defaultSensorRange; j <= y + Parameters.defaultSensorRange; j++) {
+					if (mySelf.getEnvironment().isInBounds(i, j)) {
+						explorationScore[i][j] = 0.0;
+					}
+				}
+			}
 		}
 	}
 
@@ -316,6 +323,15 @@ public class TWAgentWorkingMemory {
 					} else if (objects[i][j].newerFact(objectsShared[i][j])) {
 						objects[i][j].setT(objectsShared[i][j].getT());
 					}
+				}
+			}
+		}
+		int x = agentPos.x;
+		int y = agentPos.y;
+		for (int i = x - Parameters.defaultSensorRange; i <= x + Parameters.defaultSensorRange; i++) {
+			for (int j = y - Parameters.defaultSensorRange; j <= y + Parameters.defaultSensorRange; j++) {
+				if (mySelf.getEnvironment().isInBounds(i, j)) {
+					explorationScore[i][j] = 0.0;
 				}
 			}
 		}
