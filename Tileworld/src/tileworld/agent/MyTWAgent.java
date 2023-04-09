@@ -30,7 +30,7 @@ public class MyTWAgent extends TWAgent{
 
     protected TWThought think() {
         // getMemory().getClosestObjectInSensorRange(Tile.class);
-        System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: " + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", fuelX: " + this.memory.getFuelX());
+//        System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: " + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", fuelX: " + this.memory.getFuelX());
 
         // If the current location is on an object: TWTile, TWHole or FuelStation, then do something
         Object tempObject = this.getEnvironment().getObjectGrid().get(this.getX(), this.getY());
