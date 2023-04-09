@@ -345,13 +345,11 @@ public class TWAgentWorkingMemory {
 		// .......................
 		for (int i = 0; i < memoryGrid.getWidth(); i++) {
 			for (int j = 0; j < memoryGrid.getHeight(); j++) {
+				explorationScore[i][j]++;
 				if (objects[i][j] != null) {
-					if (getEstimatedRemainingLifetime(objects[i][j].getO(), 1.) > 0) {
-						explorationScore[i][j] += 1;
-					} else {
+					if (!(getEstimatedRemainingLifetime(objects[i][j].getO(), 1.) > 0)) {
 						objects[i][j] = null;
 						memoryGrid.set(i, j, null);
-						explorationScore[i][j] = Double.MAX_VALUE;
 					}
 				}
 			}
