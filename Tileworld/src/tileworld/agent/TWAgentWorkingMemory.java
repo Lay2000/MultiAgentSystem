@@ -186,6 +186,7 @@ public class TWAgentWorkingMemory {
 			for (int j = 0; j < mapy; j++) {
 				explorationScore[i][j] = Double.POSITIVE_INFINITY;
 			}
+
 		}
 
 		this.mySelf = me;
@@ -244,11 +245,13 @@ public class TWAgentWorkingMemory {
 				if (i + visibleX_min >= 0 && i + visibleX_min < memoryGrid.getWidth()
 						&& j + visibleY_min >= 0 && j + visibleY_min < memoryGrid.getHeight()) {
 					previousSensedObj[i][j] = objects[i + visibleX_min][j + visibleY_min];
+					this.explorationScore[i + visibleX_min][j + visibleY_min] = 0.0;
 					objects[i + visibleX_min][j + visibleY_min] = null;
 					memoryGrid.set(i + visibleX_min, j + visibleY_min, null);
 				}
 			}
 		}
+//		System.out.printf("Cur Location: %d %d, Cur ExplorationScore: %f\n", mySelf.getX(), mySelf.getY(), explorationScore[mySelf.getX()][mySelf.getY()]);
 
 		/*
 		 * 遍历参数里提供的，此轮感受野中感受到的物品，并放入记忆中。
@@ -358,9 +361,11 @@ public class TWAgentWorkingMemory {
 		int y2 = bounds[2].y;
 		for (int i = x1; i <= x2; i++) {
 			for (int j = y1; j <= y2; j++) {
-				TWEntity o = objects[i][j].getO();
-				if (type.isInstance(o)) {
-					entities.add(o);
+				if (mySelf.getEnvironment().isInBounds(i,j) && objects[i][j] != null && !(objects[i][j].getO() instanceof TWFuelStation)) {
+					TWEntity o = objects[i][j].getO();
+					if (type.isInstance(o)) {
+						entities.add(o);
+					}
 				}
 			}
 		}
@@ -382,10 +387,17 @@ public class TWAgentWorkingMemory {
 			for (int j = anchor.y - Parameters.defaultSensorRange; j <= anchor.y + Parameters.defaultSensorRange; j++) {
 				if (i >= 0 && i < memoryGrid.getWidth() && j >= 0 && j < memoryGrid.getHeight()) {
 					exploreCnt++;
+//					if (anchor.x == mySelf.getX() && anchor.y == mySelf.getY()) {
+//						System.out.printf("Position: %d, %d ExplorationScore: %f\n", i, j, explorationScore[i][j]);
+//					}
 					score = score * (1. - 1. / exploreCnt) + explorationScore[i][j] * (1. / exploreCnt);
 				}
 			}
 		}
+//		if (anchor.x == mySelf.getX() && anchor.y == mySelf.getY()) {
+//			System.out.printf("Cur Location: %d %d, Cur ExplorationScore: %f\n", mySelf.getX(), mySelf.getY(), explorationScore[mySelf.getX()][mySelf.getY()]);
+//			System.out.printf("Anchors: %d, %d CurExplorationScore: %f\n", anchor.x, anchor.y, score);
+//		}
 		return score;
 	}
 

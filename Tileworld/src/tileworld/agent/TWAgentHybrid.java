@@ -1,7 +1,13 @@
 package tileworld.agent;
 
+import java.awt.*;
 import java.util.*;
+import java.util.List;
 
+import sim.display.GUIState;
+import sim.portrayal.Inspector;
+import sim.portrayal.LocationWrapper;
+import sim.portrayal.Portrayal;
 import sim.util.Int2D;
 import tileworld.Parameters;
 import tileworld.environment.TWEntity;
@@ -29,17 +35,17 @@ public class TWAgentHybrid extends TWAgent {
      * Lower tolerance means agent leaves plenty of buffer fuel and may tend to
      * refuel more
      */
-    private double fuelTolerance;
+    private double fuelTolerance=0.95;
 
     /**
      * Hard fuel limit before needing to refuel
      */
-    private double hardFuelLimit;
+    private double hardFuelLimit=50;
 
     /**
      * Modifies the heuristic used for prioritizing the list of possible goals.
      */
-    private boolean TSPHeuristic;
+    private boolean TSPHeuristic=false;
 
     /**
      * Lifetime threshold used for determining whether a object at risk of decay
@@ -49,7 +55,7 @@ public class TWAgentHybrid extends TWAgent {
      * Estimated remaining time left for a memorized object is based on its memory
      * time stamp.
      */
-    private double objectLifetimeThreshold;
+    private double objectLifetimeThreshold=1.0;
 
     /**
      * Maximum number of goals in queue to announce.
@@ -60,14 +66,14 @@ public class TWAgentHybrid extends TWAgent {
      * goal and this agent's next immediate goal,
      * thus wasting the assisting agent's resources.
      */
-    private int goalAnnounceCount;
+    private int goalAnnounceCount=1;
 
-    private boolean allowAssistance;
+    private boolean allowAssistance=false;
 
     /**
      * Furthest zone agent can move to assist, specified in terms of number of zones
      */
-    private int maxAssistZoneDistance;
+    private int maxAssistZoneDistance=1;
 
     // ==============================================================================
     // 成员变量
@@ -122,10 +128,11 @@ public class TWAgentHybrid extends TWAgent {
      * 允许边界上的有交叉，详情看原ppt有讲
      */
     private Int2D[] anchors;
+
     /**
      * agent的记忆
      */
-    private TWAgentWorkingMemory workingMemory;
+//    private TWAgentWorkingMemory workingMemory;
     /**
      * agent记忆中获取的
      * 在自己负责范围内的tile
@@ -178,7 +185,7 @@ public class TWAgentHybrid extends TWAgent {
         // 大名
         this.name = name;
         // 标识符
-        this.agentID = Character.getNumericValue(name.charAt(name.length() - 1)) - 1;
+        this.agentID = Character.getNumericValue(name.charAt(name.length() - 1)); // 这里不需要减一，因为agentID为0在communicate的时候代表全部Agent
         // agent的计划
         this.planner = new DefaultTWPlanner(this);
         // agent的记忆
@@ -190,6 +197,7 @@ public class TWAgentHybrid extends TWAgent {
         this.holesInZone = new PriorityQueue<TWEntity>();
         this.possibleTileGoals = new LinkedList<TWEntity>();
         this.possibleHoleGoals = new LinkedList<TWEntity>();
+        this.myZoneID = new HashMap<>();
     }
 
     // ==============================================================================
@@ -208,7 +216,7 @@ public class TWAgentHybrid extends TWAgent {
         // 发送自己的记忆
         // 暂且规定 receiver 为 0 时向全体广播
         Message message = new Message(agentID, 0, MsgType.agentInfo,
-                new Object[] { workingMemory.getAgentPercept(), new Int2D(x, y) });
+                new Object[] { memory.getAgentPercept(), new Int2D(x, y) });
         this.getEnvironment().receiveMessage(message);
 
         // 判断是否初始化完成（划分好区域了）
@@ -217,8 +225,8 @@ public class TWAgentHybrid extends TWAgent {
         // 是的话就
         // 判断可达性--添加可能列表--添加招标列表--发送自己的goal和招标信息
         // 注意判断各种限制，比如最大可携带的tile数量
-        tilesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, TWTile.class);
-        holesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, TWHole.class);
+        tilesInZone = memory.getNearbyObjectsWithinBounds(bounds, TWTile.class);
+        holesInZone = memory.getNearbyObjectsWithinBounds(bounds, TWHole.class);
 
         possibleTileGoals.clear();
         possibleHoleGoals.clear();
@@ -231,14 +239,14 @@ public class TWAgentHybrid extends TWAgent {
         while (!tilesInZone.isEmpty()) {
             TWEntity tile = tilesInZone.poll();
             double distToTile = this.getDistanceTo(tile);
-            if (workingMemory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile) auctionTiles.add(tile);
+            if (memory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile) auctionTiles.add(tile);
             else possibleTileGoals.add(tile);
         }
 
         while (!holesInZone.isEmpty()) {
             TWEntity hole = holesInZone.poll();
             double distToHole = this.getDistanceTo(hole);
-            if (workingMemory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole) auctionHoles.add(hole);
+            if (memory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole) auctionHoles.add(hole);
             else possibleHoleGoals.add(hole);
         }
 
@@ -423,7 +431,7 @@ public class TWAgentHybrid extends TWAgent {
         if (myZone != contractZone && Math.abs(myZone - contractZone) <= maxAssistZoneDistance) {
             for (TWEntity twEntity : contractObj) {
                 double distToObj = this.getDistanceTo(twEntity);
-                if (!(workingMemory.getEstimatedRemainingLifetime(twEntity, this.objectLifetimeThreshold) <= distToObj)) queue.add(twEntity);
+                if (!(memory.getEstimatedRemainingLifetime(twEntity, this.objectLifetimeThreshold) <= distToObj)) queue.add(twEntity);
             }
         }
     }
@@ -437,7 +445,7 @@ public class TWAgentHybrid extends TWAgent {
         double oDist = getDistanceTo(o);
         // Modifies Manhattan distance by lifetime remaining, so between two equidistant objects, the one with a shorter lifetime is closer
         if (this.TSPHeuristic) {
-            oDist *= workingMemory.getEstimatedRemainingLifetime(o, 1.0)/Parameters.lifeTime;
+            oDist *= memory.getEstimatedRemainingLifetime(o, 1.0)/Parameters.lifeTime;
         }
         return oDist;
     }
@@ -450,19 +458,19 @@ public class TWAgentHybrid extends TWAgent {
             return;
         }
         assignZone(this.getEnvironment().getxDimension(), this.getEnvironment().getyDimension());
-        tilesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWTile().getClass());
-        holesInZone = workingMemory.getNearbyObjectsWithinBounds(bounds, new TWHole().getClass());
+        tilesInZone = memory.getNearbyObjectsWithinBounds(bounds, new TWTile().getClass());
+        holesInZone = memory.getNearbyObjectsWithinBounds(bounds, new TWHole().getClass());
         while (!tilesInZone.isEmpty()) {
             TWEntity tile = tilesInZone.poll();
             double distToTile = this.getDistanceTo(tile);
-            if (!(workingMemory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile)) {
+            if (!(memory.getEstimatedRemainingLifetime(tile, this.objectLifetimeThreshold) <= distToTile)) {
                 possibleTileGoals.add(tile);
             }
         }
         while (!holesInZone.isEmpty()) {
             TWEntity hole = holesInZone.poll();
             double distToHole = this.getDistanceTo(hole);
-            if (!(workingMemory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole)) {
+            if (!(memory.getEstimatedRemainingLifetime(hole, this.objectLifetimeThreshold) <= distToHole)) {
                 possibleHoleGoals.add(hole);
             }
         }
@@ -470,6 +478,7 @@ public class TWAgentHybrid extends TWAgent {
         closestHole = new TWEntity[possibleHoleGoals.size()];
         closestTile = possibleTileGoals.toArray(closestTile);
         closestHole = possibleHoleGoals.toArray(closestHole);
+        System.out.printf("Agent [%d]: LeftUp(%d %d), rightDown(%d %d), \n",agentID, bounds[0].x, bounds[0].y, bounds[2].x, bounds[2].y);
     }
 
     /**
@@ -533,9 +542,9 @@ public class TWAgentHybrid extends TWAgent {
         Double max_score = Double.NEGATIVE_INFINITY;
 
         for (int i = 0; i < anchors.length; i++) {
-            Double curExplorationScore = workingMemory.getAnchorExplorationScore(anchors[i]);
+            Double curExplorationScore = memory.getAnchorExplorationScore(anchors[i]);
             Double distToAnchor = this.getDistanceTo(anchors[i].x, anchors[i].y);
-
+//            System.out.printf("Anchors: %d, %d CurExplorationScore: %f\n", anchors[i].x, anchors[i].y, curExplorationScore);
             if (curExplorationScore > max_score ||
                     ((curExplorationScore.equals(max_score)) &&
                             (distToAnchor < this.getDistanceTo(anchorGoal.x, anchorGoal.y)))
@@ -543,7 +552,7 @@ public class TWAgentHybrid extends TWAgent {
                 max_score = curExplorationScore;
 
                 // 如果被阻挡，寻找具有最高探索得分的替代位置
-                if (workingMemory.isCellBlocked(anchors[i].x, anchors[i].y)) {
+                if (memory.isCellBlocked(anchors[i].x, anchors[i].y)) {
                     ArrayList<Int2D> alternativeAnchors = new ArrayList<Int2D>();
                     ArrayList<Double> alternativeScores = new ArrayList<Double>();
                     for (int j = -1; j <= 1; j++) {
@@ -552,9 +561,9 @@ public class TWAgentHybrid extends TWAgent {
                                     anchors[i].y + k < this.getEnvironment().getyDimension() &&
                                     anchors[i].x - j >= 0 &&
                                     anchors[i].y + k >= 0 &&
-                                    !workingMemory.isCellBlocked(anchors[i].x + j, anchors[i].y + k)) {
+                                    !memory.isCellBlocked(anchors[i].x + j, anchors[i].y + k)) {
                                 alternativeAnchors.add(new Int2D(anchors[i].x + j, anchors[i].y + k));
-                                alternativeScores.add(workingMemory.getAnchorExplorationScore(alternativeAnchors.get(alternativeAnchors.size() - 1)));
+                                alternativeScores.add(memory.getAnchorExplorationScore(alternativeAnchors.get(alternativeAnchors.size() - 1)));
                             }
                         }
                     }
@@ -584,11 +593,11 @@ public class TWAgentHybrid extends TWAgent {
         mode = Mode.EXPLORE;
 
         // 如果已经找到加油站并且燃料不足，加油优先级最高
-        if (workingMemory.getFuelStation() != null && this.getDistanceTo(workingMemory.getFuelStation().x, workingMemory.getFuelStation().y) >= this.fuelLevel * fuelTolerance) {
+        if (memory.getFuelStation() != null && this.getDistanceTo(memory.getFuelStation().x, memory.getFuelStation().y) >= this.fuelLevel * fuelTolerance) {
             mode = Mode.REFUEL;
         }
         // 如果尚未找到加油站，探索优先级最高
-        else if (workingMemory.getFuelStation() == null) {
+        else if (memory.getFuelStation() == null) {
             mode = Mode.EXPLORE;
         }
 //        // 下列代码感觉可以删除
@@ -598,7 +607,7 @@ public class TWAgentHybrid extends TWAgent {
 //            // 如果加油站在此代理的区域内，其他代理必须协助探索
 //            // 此区域剩余部分，希望有足够的燃料来支持
 //            // (ASSIST_EXPLORE 尚未编程，需要向环境广播剩余探索地图)
-//            if (workingMemory.getFuelStation() == null) {
+//            if (memory.getFuelStation() == null) {
 //                mode = Mode.WAIT;
 //            }
 //            else {
@@ -646,14 +655,14 @@ public class TWAgentHybrid extends TWAgent {
         // [初始化] 初始化划分区域, 设置默认的closestTile和closestHole
         assignZoneAndFindEntities();
 
-		// [知识共享] 获取环境中的所有Messages,并将类别是agentInfo(MAP)的MessageContent合并到自己的workingMemory里面
+		// [知识共享] 获取环境中的所有Messages,并将类别是agentInfo(MAP)的MessageContent合并到自己的memory里面
 		ArrayList<Message> messages = this.getEnvironment().getMessages();
 		for (int i = 0; i < messages.size(); i++) {
 			Message message = messages.get(i);
 			if (message.getSender() != agentID &&
 				message.getReceiver() == 0 &&
 				message.getMessageType() == MsgType.agentInfo) {
-				workingMemory.mergeMemory((TWAgentPercept[][]) message.getMessageContent()[0], (Int2D) message.getMessageContent()[1]);
+				memory.mergeMemory((TWAgentPercept[][]) message.getMessageContent()[0], (Int2D) message.getMessageContent()[1]);
 			}
 		}
 
@@ -669,14 +678,17 @@ public class TWAgentHybrid extends TWAgent {
 		planner.getGoals().clear();
 		planner.voidPlan();
 
+//        System.out.println(fuelLevel);
+
         // 即使在优先考虑探索的情况下，始终检查是否可以拾起/填充/加油
-		Object curLocObj = this.memory.getMemoryGrid().get(x, y);
+//		Object curLocObj = this.memory.getMemoryGrid().get(x, y);
+        Object curLocObj = this.getEnvironment().getObjectGrid().get(x, y);
 		if (curLocObj instanceof TWHole &&
 			this.getEnvironment().canPutdownTile((TWHole) curLocObj, this)) {
 			mode = Mode.REACT_FILL;
             // 宣布目标，因为可能目标不在自己区域的视野范围内，而是在前往或离开加油站的途中遇到的
             // 如果是这样，可能会出现目标冲突的情况
-			TWEntity[] goalsArr = new TWEntity[] {this.workingMemory.getObjects()[x][y].getO()};
+			TWEntity[] goalsArr = new TWEntity[] {this.memory.getObjects()[x][y].getO()};
 			Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
 			this.getEnvironment().receiveMessage(goalMessage);
 
@@ -689,7 +701,7 @@ public class TWAgentHybrid extends TWAgent {
 		{
 			mode = Mode.REACT_COLLECT;
 
-			TWEntity[] goalsArr = new TWEntity[] {this.workingMemory.getObjects()[x][y].getO()};
+			TWEntity[] goalsArr = new TWEntity[] {this.memory.getObjects()[x][y].getO()};
 			Message goalMessage = new Message(agentID, 0, MsgType.goalInfo, goalsArr);
 			this.getEnvironment().receiveMessage(goalMessage);
 
@@ -711,9 +723,10 @@ public class TWAgentHybrid extends TWAgent {
                 // 收集所有锚点的探索分数
 				Int2D anchorGoal = getAnchorGoal();
 				planner.getGoals().add(anchorGoal);
+//                System.out.println("Cur Loc: " + this.x + " " + this.y + " Goals: " + planner.getGoals());
 			}
 			else if (mode == Mode.REFUEL) {
-				planner.getGoals().add(workingMemory.getFuelStation());
+				planner.getGoals().add(memory.getFuelStation());
 			}
 			else if (mode == Mode.COLLECT) {
 				planner.getGoals().add(new Int2D(closestTile[0].getX(), closestTile[0].getY()));
@@ -759,8 +772,11 @@ public class TWAgentHybrid extends TWAgent {
      */
     @Override
     protected void act(TWThought thought) {
+        System.out.println("Agent" + agentID + " Mode:" + mode + " Location:" + x + "," + y + " Goal: " + planner.getCurrentGoal() + " FuelLevel: " + fuelLevel + " FuelStation: " + this.memory.getFuelStation());
         switch (thought.getAction()) {
             case MOVE:
+//                System.out.println(thought.getAction());
+//                System.out.println(thought.getDirection());
                 try {
                     move(thought.getDirection());
                 } catch (CellBlockedException ex) {
@@ -769,11 +785,11 @@ public class TWAgentHybrid extends TWAgent {
                 }
                 break;
             case PICKUP:
-                pickUpTile((TWTile) memory.getMemoryGrid().get(this.x, this.y));
+                pickUpTile((TWTile) getEnvironment().getObjectGrid().get(this.x, this.y));
 				planner.getGoals().clear();
 				break;
             case PUTDOWN:
-				putTileInHole((TWHole) memory.getMemoryGrid().get(this.x, this.y));
+				putTileInHole((TWHole) getEnvironment().getObjectGrid().get(this.x, this.y));
 				planner.getGoals().clear();
 				break;
 			case REFUEL:

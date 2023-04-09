@@ -223,7 +223,6 @@ public abstract class TWAgent extends TWEntity implements Steppable {
     public static Portrayal getPortrayal() {
         // red filled box.
         return new TWAgentPortrayal(Color.blue, Parameters.defaultSensorRange) {
-
             @Override
             public Inspector getInspector(LocationWrapper wrapper, GUIState state) {
                 // make the inspector
