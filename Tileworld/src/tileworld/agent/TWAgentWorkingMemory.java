@@ -182,15 +182,17 @@ public class TWAgentWorkingMemory {
 
 		// 探索得分初始化为正无穷
 		this.explorationScore = new Double[mapx][mapy];
+		this.objects = new TWAgentPercept[mapx][mapy];
 		for (int i = 0; i < mapx; i++) {
 			for (int j = 0; j < mapy; j++) {
 				explorationScore[i][j] = Double.POSITIVE_INFINITY;
+				// 保证objects[i][j]非空，只通过setO和getO读写记忆，保留时间戳
+				objects[i][j] = new TWAgentPercept(null, 0);
 			}
 
 		}
 
 		this.mySelf = me;
-		this.objects = new TWAgentPercept[mapx][mapy];
 		this.schedule = schedule;
 		this.memoryGrid = new ObjectGrid2D(mapx, mapy);
 
@@ -245,7 +247,7 @@ public class TWAgentWorkingMemory {
 				if (mySelf.getEnvironment().isInBounds(i + visibleX_min, j + visibleY_min)) {
 					previousSensedObj[i][j] = objects[i + visibleX_min][j + visibleY_min];
 					this.explorationScore[i + visibleX_min][j + visibleY_min] = 0.0;
-					objects[i + visibleX_min][j + visibleY_min] = null;
+					objects[i + visibleX_min][j + visibleY_min] = new TWAgentPercept(null, schedule.getTime()); // 刷新感知区所有点的时间戳
 					memoryGrid.set(i + visibleX_min, j + visibleY_min, null);
 				}
 			}
@@ -269,14 +271,12 @@ public class TWAgentWorkingMemory {
 				}
 				TWEntity obj = (TWEntity) o;
 				TWAgentPercept prev = previousSensedObj[x-visibleX_min][y-visibleY_min];
-				if (prev == null) {
-					objects[x][y] = new TWAgentPercept(obj, schedule.getTime());
-					memoryGrid.set(x, y, objects[x][y].getO());
+				if (prev.getO() == null) {
+					objects[x][y].setO(obj);
 				} else if (prev.getO().getClass() == obj.getClass()) {
-					objects[x][y] = prev;
-					objects[x][y].setT(schedule.getTime());
-					memoryGrid.set(x, y, objects[x][y].getO());
+					objects[x][y] = prev; // 保留prev的时间戳
 				}
+				memoryGrid.set(x, y, objects[x][y].getO());
 				updateClosest(obj);
 			}
 		}
@@ -317,18 +317,21 @@ public class TWAgentWorkingMemory {
 		// ...............
 		for (int i = 0; i < memoryGrid.getWidth(); i++) {
 			for (int j = 0; j < memoryGrid.getHeight(); j++) {
-				//这片区域是不是在这一轮感知到的
-				//如果是那就不更新
-				//如果不是那就merge
-
 				if (objectsShared[i][j] != null) {
 					if (objectsShared[i][j].getO() instanceof TWFuelStation && fuelStation == null) {
 						setFuelStation(i, j);
-					} else if (objects[i][j] == null) {
-						objects[i][j] = objectsShared[i][j];
-						memoryGrid.set(i, j, objects[i][j].getO());
-					} else if (objects[i][j].newerFact(objectsShared[i][j])) {
-						objects[i][j].setT(objectsShared[i][j].getT());
+					}
+					//这片区域是不是自己感知到的版本更新
+					//如果是那就不更新
+					//如果不是那就merge
+					if (objects[i][j].getT() < objectsShared[i][j].getT()) {
+						if (objects[i][j].getO() == null) {
+							objects[i][j].setO(objectsShared[i][j].getO());
+							objects[i][j].setT(objectsShared[i][j].getT());
+							memoryGrid.set(i, j, objects[i][j].getO());
+						} else if (objects[i][j].newerFact(objectsShared[i][j])) {
+							objects[i][j].setT(objectsShared[i][j].getT());
+						}
 					}
 				}
 			}
@@ -353,9 +356,9 @@ public class TWAgentWorkingMemory {
 		for (int i = 0; i < memoryGrid.getWidth(); i++) {
 			for (int j = 0; j < memoryGrid.getHeight(); j++) {
 				explorationScore[i][j]++; // Marked
-				if (objects[i][j] != null) {
+				if (objects[i][j].getO() != null) {
 					if (!(getEstimatedRemainingLifetime(objects[i][j].getO(), 1.) > 0)) {
-						objects[i][j] = null;
+						objects[i][j].setO(null);
 						memoryGrid.set(i, j, null);
 					}
 				}
@@ -382,7 +385,7 @@ public class TWAgentWorkingMemory {
 		int y2 = bounds[2].y;
 		for (int i = x1; i <= x2; i++) {
 			for (int j = y1; j <= y2; j++) {
-				if (mySelf.getEnvironment().isInBounds(i,j) && objects[i][j] != null && !(objects[i][j].getO() instanceof TWFuelStation)) {
+				if (mySelf.getEnvironment().isInBounds(i,j)) {
 					TWEntity o = objects[i][j].getO();
 					if (type.isInstance(o)) {
 						entities.add(o);
