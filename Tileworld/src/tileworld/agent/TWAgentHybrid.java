@@ -35,7 +35,7 @@ public class TWAgentHybrid extends TWAgent {
      * Lower tolerance means agent leaves plenty of buffer fuel and may tend to
      * refuel more
      */
-    private double fuelTolerance=0.95;
+    private double fuelTolerance=0.8;
 
     /**
      * Hard fuel limit before needing to refuel
@@ -601,19 +601,19 @@ public class TWAgentHybrid extends TWAgent {
             mode = Mode.EXPLORE;
         }
 //        // 下列代码感觉可以删除
-//        else if (this.fuelLevel <= this.hardFuelLimit) {
-//            // 极其罕见的情况，即在第一阶段探索过程中未发现加油站
-//            // 代理等待其他代理完成他们的区域探索，希望能找到加油站
-//            // 如果加油站在此代理的区域内，其他代理必须协助探索
-//            // 此区域剩余部分，希望有足够的燃料来支持
-//            // (ASSIST_EXPLORE 尚未编程，需要向环境广播剩余探索地图)
-//            if (memory.getFuelStation() == null) {
-//                mode = Mode.WAIT;
-//            }
-//            else {
-//                mode = Mode.REFUEL;
-//            }
-//        }
+        else if (this.fuelLevel <= this.hardFuelLimit) {
+            // 极其罕见的情况，即在第一阶段探索过程中未发现加油站
+            // 代理等待其他代理完成他们的区域探索，希望能找到加油站
+            // 如果加油站在此代理的区域内，其他代理必须协助探索
+            // 此区域剩余部分，希望有足够的燃料来支持
+            // (ASSIST_EXPLORE 尚未编程，需要向环境广播剩余探索地图)
+            if (memory.getFuelStation() == null) {
+                mode = Mode.WAIT;
+            }
+            else {
+                mode = Mode.REFUEL;
+            }
+        }
         // 如果没有tile并且附近有tile，收集tile，否则探索
         else if (!this.hasTile()) {
             if (closestTile.length > 0) {
@@ -772,7 +772,8 @@ public class TWAgentHybrid extends TWAgent {
      */
     @Override
     protected void act(TWThought thought) {
-        System.out.println("Agent" + agentID + " Mode:" + mode + " Location:" + x + "," + y + " Goal: " + planner.getCurrentGoal() + " FuelLevel: " + fuelLevel + " FuelStation: " + this.memory.getFuelStation());
+        System.out.println("Agent" + agentID + " Mode:" + mode + " Location:" + x + "," + y + " Goal: " + planner.getCurrentGoal() + " FuelLevel: " + fuelLevel + " FuelStation: " + this.memory.getFuelStation() + "Current Carry: " + carriedTiles.size());
+        System.out.println("Agent" + agentID + " closestHole.length: " + closestHole.length + " closestTile.length: " + closestTile.length);
         switch (thought.getAction()) {
             case MOVE:
 //                System.out.println(thought.getAction());

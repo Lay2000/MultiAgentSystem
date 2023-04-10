@@ -317,6 +317,10 @@ public class TWAgentWorkingMemory {
 		// ...............
 		for (int i = 0; i < memoryGrid.getWidth(); i++) {
 			for (int j = 0; j < memoryGrid.getHeight(); j++) {
+				//这片区域是不是在这一轮感知到的
+				//如果是那就不更新
+				//如果不是那就merge
+
 				if (objectsShared[i][j] != null) {
 					if (objectsShared[i][j].getO() instanceof TWFuelStation && fuelStation == null) {
 						setFuelStation(i, j);
@@ -348,7 +352,7 @@ public class TWAgentWorkingMemory {
 		// .......................
 		for (int i = 0; i < memoryGrid.getWidth(); i++) {
 			for (int j = 0; j < memoryGrid.getHeight(); j++) {
-				explorationScore[i][j]++;
+				explorationScore[i][j]++; // Marked
 				if (objects[i][j] != null) {
 					if (!(getEstimatedRemainingLifetime(objects[i][j].getO(), 1.) > 0)) {
 						objects[i][j] = null;
