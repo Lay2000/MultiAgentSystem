@@ -20,14 +20,14 @@ import tileworld.exceptions.CellBlockedException;
  * TWAgent
  *
  * @author michaellees
- *         Created: Apr 21, 2010
+ * Created: Apr 21, 2010
  *
- *         Copyright michaellees 2010
+ * Copyright michaellees 2010
  *
  *
- *         Description:
+ * Description:
  *
- *         Abstract class used for implementing TWAgents.
+ * Abstract class used for implementing TWAgents.
  *
  */
 public abstract class TWAgent extends TWEntity implements Steppable {
@@ -40,14 +40,14 @@ public abstract class TWAgent extends TWEntity implements Steppable {
 
     public TWAgent(int xpos, int ypos, TWEnvironment env, double fuelLevel) {
         super(xpos, ypos, env);
-
+       
         this.score = 0;
         this.fuelLevel = fuelLevel;
         this.carriedTiles = new ArrayList<TWTile>();
         this.sensor = new TWAgentSensor(this, Parameters.defaultSensorRange);
-        this.memory = new TWAgentWorkingMemory(this, env.schedule);
+        this.memory = new TWAgentWorkingMemory(this, env.schedule, env.getxDimension(), env.getyDimension());
+    	
     }
-
     /**
      * Fuel level, automatically decremented once per move.
      */
@@ -61,12 +61,11 @@ public abstract class TWAgent extends TWEntity implements Steppable {
      */
     protected TWAgentSensor sensor;
     /**
-     * Memory which stores sensed facts in the form of tuples (see
-     * TWAgentMemoryFact)
+     * Memory which stores sensed facts in the form of tuples (see TWAgentMemoryFact)
      */
     protected TWAgentWorkingMemory memory;
 
-    // THE THREE METHODS YOU SHOULD EXTEND - SENSE, THINK, ACT
+    //THE THREE METHODS YOU SHOULD EXTEND - SENSE, THINK, ACT
     /**
      * Sense procedure of the agent simply stores observed objects into memory.
      *
@@ -74,11 +73,10 @@ public abstract class TWAgent extends TWEntity implements Steppable {
     public void sense() {
         sensor.sense();
     }
-
+    
     public void communicate() {
-        // Message message = new Message("","","");
-        // this.getEnvironment().receiveMessage(message); // this will send the message
-        // to the broadcast channel of the environment
+        Message message = new Message("","");
+        this.getEnvironment().receiveMessage(message); // this will send the message to the broadcast channel of the environment
     }
 
     /**
@@ -94,27 +92,25 @@ public abstract class TWAgent extends TWEntity implements Steppable {
      */
     abstract protected void act(TWThought thought);
 
-    // ----------------------------------------------------------------
-    // ----------------------------------------------------------------
-    // OTHER METHODS YOU MAY WANT TO USE
+    //----------------------------------------------------------------
+    //----------------------------------------------------------------
+    //OTHER METHODS YOU MAY WANT TO USE
     /**
      * Call this to move your agent in a specified direction
      */
     @Override
     protected void move(TWDirection d) throws CellBlockedException {
         if (fuelLevel <= 0) {
-            System.out.println("[" + this.getName() + "]" + " Agent ran out of fuel, Score: " + this.score);
-            // Bad news, causes runtime exception
-            // throw new InsufficientFuelException("Agent ran out of fuel, Score: " +
-            // this.score);
+        	System.out.println("Agent ran out of fuel, Score: " + this.score);
+            //Bad news, causes runtime exception
+            //throw new InsufficientFuelException("Agent ran out of fuel, Score: " + this.score);
         } else {
-            moveDir(d);
+        	moveDir(d);
         }
     }
 
     /**
      * Gets the fuel level of the agent
-     * 
      * @return
      */
     public double getFuelLevel() {
@@ -128,17 +124,17 @@ public abstract class TWAgent extends TWEntity implements Steppable {
      * @param tile The Tile to pick up
      */
     protected final void pickUpTile(TWTile tile) {
-        if (this.getEnvironment().canPickupTile(tile, this)) {
-            if (carriedTiles.size() < 3) {
-                carriedTiles.add(tile);
-                System.out.println("Pickup...");
-                this.getEnvironment().getObjectGrid().set(tile.getX(), tile.getY(), null);
-            } else {
-                System.out.println("Agent already carries 3 tiles.");
-            }
-        } else {
-            System.out.println("The tile does not exist or the agent is not in the same position of the tile.");
-        }
+    	if(this.getEnvironment().canPickupTile(tile, this)) {
+	    	if (carriedTiles.size() < 3){
+	    		carriedTiles.add(tile);
+	    		System.out.println("Pickup...");
+	    		this.getEnvironment().getObjectGrid().set(tile.getX(), tile.getY(), null);
+	    	} else {
+	    		System.out.println("Agent already carries 3 tiles.");
+	    	}
+    	} else {
+    		System.out.println("The tile does not exist or the agent is not in the same position of the tile.");
+    	}
     }
 
     /**
@@ -148,15 +144,15 @@ public abstract class TWAgent extends TWEntity implements Steppable {
      * @param hole
      */
     protected final void putTileInHole(TWHole hole) {
-        if (this.getEnvironment().canPutdownTile(hole, this)) {
-            this.carriedTiles.remove(0); // remove first tile in list
-            this.getEnvironment().getObjectGrid().set(hole.getX(), hole.getY(), null);
-            this.score++; // increase individual reward
-            this.getEnvironment().increaseReward(); // increase the overall reward
-            System.out.println("Put tile...");
-        } else {
-            System.out.println("The put down action is invalid in current situation.");
-        }
+    	if(this.getEnvironment().canPutdownTile(hole, this)) {
+    		this.carriedTiles.remove(0); //remove first tile in list
+    		this.getEnvironment().getObjectGrid().set(hole.getX(), hole.getY(), null);
+    		this.score++; // increase individual reward       
+    		this.getEnvironment().increaseReward(); // increase the overall reward
+    		System.out.println("Put tile...");
+    	} else {
+    		System.out.println("The put down action is invalid in current situation.");
+    	}
     }
 
     /**
@@ -165,38 +161,37 @@ public abstract class TWAgent extends TWEntity implements Steppable {
      *
      */
     protected final void refuel() {
-        // assert (this.sameLocation(this.getEnvironment().getFuelingStation()));
-        if (this.getEnvironment().inFuelStation(this)) {
-            this.fuelLevel = Parameters.defaultFuelLevel;
-            System.out.println("Refuel.....");
-        } else {
-            System.out.println("Agent is not in the same position of fuel station.");
-        }
+        //assert (this.sameLocation(this.getEnvironment().getFuelingStation()));   	
+    	if(this.getEnvironment().inFuelStation(this)) {
+    		this.fuelLevel = Parameters.defaultFuelLevel;
+    		System.out.println("Refuel.....");
+    	}else {
+    		System.out.println("Agent is not in the same position of fuel station.");
+    	}
     }
 
     /**
      * This method actually moves the agent in the currently selected direction.
      * You shouldn't modify this, be aware of the CellBlockedException
-     * 
      * @throws CellBlockedException
      */
     protected void moveDir(TWDirection direction) throws CellBlockedException {
-        // get current location
+        //get current location
         int localX = this.getX();
         int localY = this.getY();
         int oldx = localX, oldy = localY;
-        // alter position according to direction
+        //alter position according to direction
         localX += direction.dx;
         localY += direction.dy;
 
-        // update location in grid (can throw exception)
+        //update location in grid (can throw exception)
         if (this.getEnvironment().isCellBlocked(localX, localY)) {
             throw new CellBlockedException();
         } else {
-            // think this is necessary with Object2DGrid
+            //think this is necessary with Object2DGrid
             this.getEnvironment().getAgentGrid().set(oldx, oldy, null);
             this.setLocation(localX, localY);
-            // remove fuel, unless we stay still.
+            //remove fuel, unless we stay still.
             if (direction != TWDirection.Z) {
                 fuelLevel--;
             }
@@ -221,8 +216,9 @@ public abstract class TWAgent extends TWEntity implements Steppable {
      * @return
      */
     public static Portrayal getPortrayal() {
-        // red filled box.
+        //red filled box.
         return new TWAgentPortrayal(Color.blue, Parameters.defaultSensorRange) {
+
             @Override
             public Inspector getInspector(LocationWrapper wrapper, GUIState state) {
                 // make the inspector
@@ -242,7 +238,6 @@ public abstract class TWAgent extends TWEntity implements Steppable {
 
     /**
      * Returns the working memory of this agent
-     * 
      * @return working memory
      */
     public TWAgentWorkingMemory getMemory() {
@@ -251,7 +246,6 @@ public abstract class TWAgent extends TWEntity implements Steppable {
 
     /**
      * Update the agents location on the agent grid.
-     * 
      * @param xpos
      * @param ypos
      */
@@ -259,10 +253,10 @@ public abstract class TWAgent extends TWEntity implements Steppable {
     protected void setLocation(int xpos, int ypos) {
         x = xpos;
         y = ypos;
-        // Set location of entity when it's created
+        //Set location of entity when it's created
         this.getEnvironment().getAgentGrid().set(x, y, this);
     }
-
+    
     /**
      * A name for the agent. Can be used for debugging and right now used for
      * memory portrayal

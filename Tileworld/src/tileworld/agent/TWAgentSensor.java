@@ -7,7 +7,9 @@ package tileworld.agent;
 
 import sim.util.Bag;
 import sim.util.IntBag;
+import tileworld.environment.TWEntity;
 import tileworld.environment.TWEnvironment;
+import tileworld.environment.TWFuelStation;
 
 /**
  * TWContextBuilder
@@ -50,17 +52,25 @@ public class TWAgentSensor {
         IntBag agentXCoords = new IntBag();
         IntBag agentYCoords = new IntBag();
         
-        
-
         //sense objects
         // getNeighborsMaxDistance: Gets all neighbors of a location that satisfy max( abs(x-X) , abs(y-Y) ) <= dist.
         // Note that the order and size of the result sensedObjects (sensedAgents) may not correspond to the objectXCoords (agentXCoords) and objectYCoords (agentYCoords) bags.
+//        me.getEnvironment().getObjectGrid().getNeighborsMaxDistance(me.getX(), me.getY(), 40, false, sensedObjects, objectXCoords, objectYCoords);
+
         me.getEnvironment().getObjectGrid().getNeighborsMaxDistance(me.getX(), me.getY(), sensorRange, false, sensedObjects, objectXCoords, objectYCoords);
         me.getEnvironment().getAgentGrid().getNeighborsMaxDistance(me.getX(), me.getY(), sensorRange, false, sensedAgents, agentXCoords, agentYCoords);
-
+        
         //import facts to memory
         me.getMemory().updateMemory(sensedObjects, objectXCoords, objectYCoords, sensedAgents,agentXCoords,agentYCoords);
+//        System.out.println("sensedObjects: ");
 
+//        for (int i = 0; i < sensedObjects.size(); i++) {
+//        	TWEntity o = (TWEntity) sensedObjects.get(i);
+//        	if(o != null) {
+//        		System.out.println("i: " + o.getX()+","+o.getY());	
+//        	}
+//        	
+//        }
     }
 
 

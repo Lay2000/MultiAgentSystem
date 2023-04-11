@@ -1,51 +1,71 @@
 package tileworld.agent;
 
-/**
- * Customized Message class for transferring a list of blocks.
- */
+import java.util.HashMap;
+import java.util.Map;
+
+import sim.util.Bag;
+import sim.util.Int2D;
+
 public class Message {
-
-	private int sender;
-
-	public int getSender() {
-		return sender;
+	private String from; // the sender
+	private String to; // the recepient
+	Map<String, Object> message;
+	
+	public Message(String from, String to) {
+		this.from = from;
+		this.to = to;
+		this.message = new HashMap<String, Object>();
+	}
+	
+	public Message(String from, String to, Map<String, Object> message){
+		this.from = from;
+		this.to = to;
+		this.message = message;
 	}
 
-	private int receiver;
-
-	public int getReceiver() {
-		return receiver;
+	public String getFrom() {
+		return from;
 	}
 
-	private MsgType messageType;
-
-	public MsgType getMessageType() {
-		return messageType;
+	public String getTo() {
+		return to;
 	}
 
-	private Object[] messageContent;
-
-	public Object[] getMessageContent() {
-		return messageContent;
+	public Map<String, Object> getMessage() {
+		return this.message;
 	}
-
-	/**
-	 * Create a customized message
-	 * 
-	 * @param sender         sender's id.
-	 * @param receiver       receiver's id. -1 if this message is to all agents.
-	 * @param messageType    one of the msgType, indicating message purpose.
-	 * @param messageContent object list so that anything can fit into it.
-	 */
-	public Message(int sender, int receiver, MsgType messageType, Object[] messageContent) {
-		this.sender = sender;
-		this.receiver = receiver;
-		this.messageType = messageType;
-		this.messageContent = messageContent;
+	
+	public void addMessage(String Key, Object Value) {
+		this.message.put(Key, Value);
 	}
-
-}
-
-enum MsgType {
-	agentInfo, goalInfo, contractInfo_tile, contractInfo_hole
+	
+	public void addFuelStationPosition(Int2D fuelStationPosition) {
+		this.addMessage("fuelStationPosition", fuelStationPosition);
+	}
+	
+	public Int2D getFuelStationPosition() {
+		if (this.message.containsKey("fuelStationPosition")) {
+			return (Int2D) this.message.get("fuelStationPosition");
+		}
+		else return null;
+	}
+	
+	public void addSensedObjects(Bag sensedObjects, Int2D agentPosition) {
+		this.addMessage("sensedObjects", sensedObjects);
+		this.addMessage("agentPosition", agentPosition);
+	}
+	
+	public Bag getSensedObjects() {
+		if (this.message.containsKey("sensedObjects")) {
+			return (Bag) this.message.get("sensedObjects");
+		}
+		else return null;
+	}
+	
+	public Int2D getAgentPosition() {
+		if (this.message.containsKey("agentPosition")) {
+			return (Int2D) this.message.get("agentPosition");
+		}
+		else return null;
+	}
 }

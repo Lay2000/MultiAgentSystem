@@ -98,6 +98,8 @@ public class TWGUI extends GUIState {
 
 
         agentGridPortrayal.setField(((TWEnvironment) state).getAgentGrid());
+        
+        agentGridPortrayal.setField(((TWEnvironment) state).getAgentGrid());
 
         agentGridPortrayal.setPortrayalForClass(TWAgent.class, TWAgent.getPortrayal());
 
@@ -110,7 +112,6 @@ public class TWGUI extends GUIState {
         objectGridPortrayal.setPortrayalForClass(TWObstacle.class, TWObstacle.getPortrayal());
         objectGridPortrayal.setPortrayalForClass(TWFuelStation.class, TWFuelStation.getPortrayal());
 
-       
 
         //reset and repaint after adding portrayals
         display.reset();

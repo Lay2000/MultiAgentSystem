@@ -41,6 +41,9 @@ public class TileworldMain {
 					break;
 				}
 				steps = tw.schedule.getSteps();
+				if(steps == 85) {
+					
+				}
 			}
 			System.out.println("The final reward is: "+tw.getReward());
 			overallScore+=tw.getReward();

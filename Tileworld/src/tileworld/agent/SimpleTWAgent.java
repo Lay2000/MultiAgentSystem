@@ -23,14 +23,18 @@ import tileworld.exceptions.CellBlockedException;
  */
 public class SimpleTWAgent extends TWAgent{
 	private String name;
+//	public int FuelStationXCoord = -1, FuelStationYCoord = -1;
     public SimpleTWAgent(String name, int xpos, int ypos, TWEnvironment env, double fuelLevel) {
         super(xpos,ypos,env,fuelLevel);
         this.name = name;
     }
 
     protected TWThought think() {
+    	// 
+    	
 //        getMemory().getClosestObjectInSensorRange(Tile.class);
-        System.out.println("[" + this.getName() +"]" + " Score: " + this.score + ", Current FuelLevel: " + this.getFuelLevel());
+    	
+        System.out.println("Simple Score: " + this.score);
         return new TWThought(TWAction.MOVE,getRandomDirection());
     }
 

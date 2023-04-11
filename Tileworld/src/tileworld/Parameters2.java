@@ -16,6 +16,8 @@ package tileworld;
  */
 public class Parameters2 {
 
+    public static int numAgent = 5;
+
     //Simulation Parameters
     public final static int seed = 4162012; //no effect with gui
     public static final long endTime = 5000; //no effect with gui
@@ -38,5 +40,5 @@ public class Parameters2 {
     public static final double obstacleDev = 0.5f;
     // the life time of each object
     public static final int lifeTime = 30;
-
+    
 }
