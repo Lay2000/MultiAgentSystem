@@ -20,7 +20,7 @@ public class MyTWAgent extends TWAgent{
     protected TWPathGenerator pathGenerator;
     private String name;
     private TWPath curPath = null;
-    private boolean rethink = false;
+    private int rethink = 0;
     private String curGoal = "RANDOM";
     public MyTWAgent(String name, int xpos, int ypos, TWEnvironment env, double fuelLevel) {
         super(xpos,ypos,env,fuelLevel);
@@ -31,7 +31,9 @@ public class MyTWAgent extends TWAgent{
     protected TWThought think() {
         // getMemory().getClosestObjectInSensorRange(Tile.class);
 //        System.out.println("[" + this.getName() +"]" + "Current Goal: " + this.curGoal + ", Score: " + this.score + ", Current FuelLevel: " + this.getFuelLevel() + ", fuelX: " + this.memory.getFuelX());
-
+        if (this.rethink >= 3) {
+            return new TWThought(TWAction.MOVE); // Direction Default as Z(0,0)
+        }
         // If the current location is on an object: TWTile, TWHole or FuelStation, then do something
         Object tempObject = this.getEnvironment().getObjectGrid().get(this.getX(), this.getY());
         if (this.carriedTiles.size() < 3 && tempObject != null && tempObject instanceof TWTile){
@@ -85,7 +87,7 @@ public class MyTWAgent extends TWAgent{
 
         // If there is a target position, and not rethink (CellBlockedException), then move following the curPath.
         // Otherwise, move in a random direction
-        if (this.curPath != null && this.curPath.hasNext() && this.rethink == false) {
+        if (this.curPath != null && this.curPath.hasNext() && this.rethink == 0) {
             TWPathStep nextStep = this.curPath.popNext();
             direction = nextStep.getDirection();
         }
@@ -120,9 +122,9 @@ public class MyTWAgent extends TWAgent{
                 try {
                     this.move(thought.getDirection());
                 } catch (CellBlockedException ex) {
-                    this.rethink = true;
+                    this.rethink += 1;
                     this.act(this.think());
-                    this.rethink = false;
+                    this.rethink -= 1;
                 }
         }
     }
