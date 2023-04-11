@@ -196,6 +196,7 @@ public class AstarPathGenerator implements TWPathGenerator {
         path.prependStep(sx, sy);
 
         // thats it, we have our path
+//        System.out.println(path);
         return path;
     }
 

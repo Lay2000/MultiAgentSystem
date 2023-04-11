@@ -58,8 +58,8 @@ public class DefaultTWPlanner implements TWPlanner {
     private TWAgent agent;
     private AstarPathGenerator pathGenerator;
 
-    private int maxSearchx;
-    private int maxSearchy;
+    private int maxSearchx=50;
+    private int maxSearchy=50;
 
     public DefaultTWPlanner(TWAgent agent) {
         this.agent = agent;
@@ -73,8 +73,8 @@ public class DefaultTWPlanner implements TWPlanner {
     // Rank nearby tiles and holes by both distance and expected time left.
     @Override
     public TWPath generatePlan() {
-        plan = pathGenerator.findPath(agent.getX(), agent.getY(), goals.get(0).x, goals.get(0).y);
-        return plan;
+        this.plan = pathGenerator.findPath(agent.getX(), agent.getY(), goals.get(0).x, goals.get(0).y);
+        return this.plan;
     }
 
     @Override

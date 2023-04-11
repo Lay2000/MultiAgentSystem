@@ -1,9 +1,6 @@
 package tileworld.agent;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.PriorityQueue;
+import java.util.*;
 
 import sim.engine.Schedule;
 import sim.field.grid.ObjectGrid2D;
@@ -32,7 +29,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 获取当前时间戳
-	 * 
+	 *
 	 * @return 浮点数时间
 	 */
 	private double getSimulationTime() {
@@ -59,7 +56,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 获取主记忆存储网格
-	 * 
+	 *
 	 * @return 网格对象
 	 */
 	public ObjectGrid2D getMemoryGrid() {
@@ -75,10 +72,10 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 获取副观测列表
-	 * 
+	 *
 	 * @return agent的观测，包装了时间戳的对象
 	 */
-	public TWAgentPercept[][] getObjects() {
+	public TWAgentPercept[][] getAgentPercept() {
 		return this.objects;
 	}
 
@@ -90,7 +87,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 返回加油站坐标
-	 * 
+	 *
 	 * @return 加油站坐标
 	 */
 	public Int2D getFuelStation() {
@@ -99,7 +96,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 设置加油站坐标
-	 * 
+	 *
 	 * @param x 加油站x
 	 * @param y 加油站y
 	 */
@@ -126,7 +123,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 更新感受野中最近的物品
-	 * 
+	 *
 	 * @param o 物体实例
 	 */
 	private void updateClosest(TWEntity o) {
@@ -152,7 +149,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 返回最近的一个agent
-	 * 
+	 *
 	 * @return 那个agent
 	 */
 	public TWAgent getNeighbour() {
@@ -185,16 +182,21 @@ public class TWAgentWorkingMemory {
 
 		// 探索得分初始化为正无穷
 		this.explorationScore = new Double[mapx][mapy];
+		this.objects = new TWAgentPercept[mapx][mapy];
 		for (int i = 0; i < mapx; i++) {
 			for (int j = 0; j < mapy; j++) {
 				explorationScore[i][j] = Double.POSITIVE_INFINITY;
+				// 保证objects[i][j]非空，只通过setO和getO读写记忆，保留时间戳
+				objects[i][j] = new TWAgentPercept(null, 0);
 			}
+
 		}
 
 		this.mySelf = me;
-		this.objects = new TWAgentPercept[mapx][mapy];
 		this.schedule = schedule;
 		this.memoryGrid = new ObjectGrid2D(mapx, mapy);
+
+		this.closestInSensorRange = new HashMap<>();
 	}
 
 	// ==============================================================================
@@ -212,7 +214,7 @@ public class TWAgentWorkingMemory {
 	 *
 	 * Also note that currently the agent has no sense of moving objects, so
 	 * an agent may remember the same object at two locations simultaneously.
-	 * 
+	 *
 	 * Other agents in the grid are sensed and passed to this function. But it
 	 * is currently not used for anything. Do remember that an agent sense itself
 	 * too.
@@ -225,11 +227,12 @@ public class TWAgentWorkingMemory {
 	 * @param agentYCoords  bag containing y coordinates of agents
 	 */
 	public void updateMemory(Bag sensedObjects, IntBag objectXCoords, IntBag objectYCoords, Bag sensedAgents,
-			IntBag agentXCoords, IntBag agentYCoords) {
+							 IntBag agentXCoords, IntBag agentYCoords) {
 		/*
 		 * 首先需要衰减记忆
 		 */
 		// ..........................
+		decayMemory();
 
 		/*
 		 * 遍历记忆中此感受野中的物体，将其放入previousSensedObj中供之后比较用，同时清除记忆中的这些物品。
@@ -241,8 +244,15 @@ public class TWAgentWorkingMemory {
 		for (int i = 0; i <= Parameters.defaultSensorRange * 2; i++) {
 			for (int j = 0; j <= Parameters.defaultSensorRange * 2; j++) {
 				// .................
+				if (mySelf.getEnvironment().isInBounds(i + visibleX_min, j + visibleY_min)) {
+					previousSensedObj[i][j] = objects[i + visibleX_min][j + visibleY_min];
+					this.explorationScore[i + visibleX_min][j + visibleY_min] = 0.0;
+					objects[i + visibleX_min][j + visibleY_min] = new TWAgentPercept(null, schedule.getTime()); // 刷新感知区所有点的时间戳
+					memoryGrid.set(i + visibleX_min, j + visibleY_min, null);
+				}
 			}
 		}
+//		System.out.printf("Cur Location: %d %d, Cur ExplorationScore: %f\n", mySelf.getX(), mySelf.getY(), explorationScore[mySelf.getX()][mySelf.getY()]);
 
 		/*
 		 * 遍历参数里提供的，此轮感受野中感受到的物品，并放入记忆中。
@@ -252,25 +262,89 @@ public class TWAgentWorkingMemory {
 		 */
 		for (int i = 0; i < sensedObjects.size(); i++) {
 			// .....................
-
+			Object o = sensedObjects.get(i);
+			int x = objectXCoords.get(i);
+			int y = objectYCoords.get(i);
+			if (o instanceof TWEntity) {
+				if (o instanceof TWFuelStation && fuelStation == null) {
+					setFuelStation(x, y);
+				}
+				TWEntity obj = (TWEntity) o;
+				TWAgentPercept prev = previousSensedObj[x-visibleX_min][y-visibleY_min];
+				if (prev.getO() == null) {
+					objects[x][y].setO(obj);
+				} else if (prev.getO().getClass() == obj.getClass()) {
+					objects[x][y] = prev; // 保留prev的时间戳
+				}
+				memoryGrid.set(x, y, objects[x][y].getO());
+				updateClosest(obj);
+			}
 		}
 
 		/*
 		 * 遍历参数中提供的agent，更新neighbouringAgents
 		 */
 		// ..........................
+		neighbouringAgents.clear();
+		for (int k = 0; k < sensedAgents.size(); k++) {
+			Object o = sensedAgents.get(k);
+			assert o instanceof TWAgent;
+			TWAgent agent = (TWAgent) o;
+			int x = agentXCoords.get(k);
+			int y = agentYCoords.get(k);
+			if (agent != mySelf) {
+				neighbouringAgents.add(agent);
+			}
+//			for (int i = x - Parameters.defaultSensorRange; i <= x + Parameters.defaultSensorRange; i++) {
+//				for (int j = y - Parameters.defaultSensorRange; j <= y + Parameters.defaultSensorRange; j++) {
+//					if (mySelf.getEnvironment().isInBounds(i, j)) {
+//						explorationScore[i][j] = 0.0;
+//					}
+//				}
+//			}
+		}
 	}
 
 	/**
 	 * 整合记忆。根据参数中提供的别的agent的记忆更新自己的记忆。
 	 * 注意处理交叉冲突部分，比如优先自己的感知而非他人记忆
 	 * 注意处理特殊点位比如加油站
-	 * 
+	 *
 	 * @param objectsShared 别人的记忆，是全图的大小的数组
 	 * @param agentPos      别人的位置
 	 */
 	public void mergeMemory(TWAgentPercept[][] objectsShared, Int2D agentPos) {
 		// ...............
+		for (int i = 0; i < memoryGrid.getWidth(); i++) {
+			for (int j = 0; j < memoryGrid.getHeight(); j++) {
+				if (objectsShared[i][j] != null) {
+					if (objectsShared[i][j].getO() instanceof TWFuelStation && fuelStation == null) {
+						setFuelStation(i, j);
+					}
+					//这片区域是不是自己感知到的版本更新
+					//如果是那就不更新
+					//如果不是那就merge
+					if (objects[i][j].getT() < objectsShared[i][j].getT()) {
+						if (objects[i][j].getO() == null) {
+							objects[i][j].setO(objectsShared[i][j].getO());
+							objects[i][j].setT(objectsShared[i][j].getT());
+							memoryGrid.set(i, j, objects[i][j].getO());
+						} else if (objects[i][j].newerFact(objectsShared[i][j])) {
+							objects[i][j].setT(objectsShared[i][j].getT());
+						}
+					}
+				}
+			}
+		}
+		int x = agentPos.x;
+		int y = agentPos.y;
+		for (int i = x - Parameters.defaultSensorRange; i <= x + Parameters.defaultSensorRange; i++) {
+			for (int j = y - Parameters.defaultSensorRange; j <= y + Parameters.defaultSensorRange; j++) {
+				if (mySelf.getEnvironment().isInBounds(i, j)) {
+					explorationScore[i][j] = 0.0;
+				}
+			}
+		}
 	}
 
 	/**
@@ -279,6 +353,17 @@ public class TWAgentWorkingMemory {
 	 */
 	public void decayMemory() {
 		// .......................
+		for (int i = 0; i < memoryGrid.getWidth(); i++) {
+			for (int j = 0; j < memoryGrid.getHeight(); j++) {
+				explorationScore[i][j]++; // Marked
+				if (objects[i][j].getO() != null) {
+					if (!(getEstimatedRemainingLifetime(objects[i][j].getO(), 1.) > 0)) {
+						objects[i][j].setO(null);
+						memoryGrid.set(i, j, null);
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -286,31 +371,63 @@ public class TWAgentWorkingMemory {
 	 * 比如一个包含了自己区域内所有tile的列表
 	 * 列表为PriorityQueue，用于根据tile的属性（比如距离agent多远）来排序
 	 * 源代码中使用下文提供的getTSPDistance()来判断比较
-	 * 
+	 *
 	 * @param bounds 包含了区域四个角坐标的数组（左上-右上-右下-左下）
 	 * @param type   类型，比如Tile类或hole类
 	 * @return 排好序的优先队列（也可以考虑其他实现）
 	 */
-	private PriorityQueue<TWEntity> getNearbyObjectsWithinBounds(Int2D[] bounds, Class<?> type) {
+	protected PriorityQueue<TWEntity> getNearbyObjectsWithinBounds(Int2D[] bounds, Class<?> type) {
 		// ...............
-		return null;
+		PriorityQueue<TWEntity> entities = new PriorityQueue<>(Comparator.comparingDouble(o -> getTSPDistance(mySelf, o, true)));
+		int x1 = bounds[0].x;
+		int y1 = bounds[0].y;
+		int x2 = bounds[2].x;
+		int y2 = bounds[2].y;
+		for (int i = x1; i <= x2; i++) {
+			for (int j = y1; j <= y2; j++) {
+				if (mySelf.getEnvironment().isInBounds(i,j)) {
+					TWEntity o = objects[i][j].getO();
+					if (type.isInstance(o)) {
+						entities.add(o);
+					}
+				}
+			}
+		}
+		return entities;
 	}
 
 	/**
 	 * 遍历一个锚点区域内所有块的探索的得分来得出锚点整体的探索得分
 	 * 用于评估一个锚点区域的探索度，以便优先探索
-	 * 
+	 *
 	 * @param anchor 锚点坐标
 	 * @return 浮点数探索得分
 	 */
 	public Double getAnchorExplorationScore(Int2D anchor) {
 		// ......................
-		return null;
+		double score = 0;
+		int exploreCnt = 0;
+		for (int i = anchor.x - Parameters.defaultSensorRange; i <= anchor.x + Parameters.defaultSensorRange; i++) {
+			for (int j = anchor.y - Parameters.defaultSensorRange; j <= anchor.y + Parameters.defaultSensorRange; j++) {
+				if (i >= 0 && i < memoryGrid.getWidth() && j >= 0 && j < memoryGrid.getHeight()) {
+					exploreCnt++;
+//					if (anchor.x == mySelf.getX() && anchor.y == mySelf.getY()) {
+//						System.out.printf("Position: %d, %d ExplorationScore: %f\n", i, j, explorationScore[i][j]);
+//					}
+					score = score * (1. - 1. / exploreCnt) + explorationScore[i][j] * (1. / exploreCnt);
+				}
+			}
+		}
+//		if (anchor.x == mySelf.getX() && anchor.y == mySelf.getY()) {
+//			System.out.printf("Cur Location: %d %d, Cur ExplorationScore: %f\n", mySelf.getX(), mySelf.getY(), explorationScore[mySelf.getX()][mySelf.getY()]);
+//			System.out.printf("Anchors: %d, %d CurExplorationScore: %f\n", anchor.x, anchor.y, score);
+//		}
+		return score;
 	}
 
 	/**
 	 * 返回预估剩余时间。（原代码，可根据需求更改）
-	 * 
+	 *
 	 * @param o         物体实例
 	 * @param threshold 超参数
 	 * @return 浮点数时间
@@ -328,7 +445,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 用预估时间来调整距离因子，比如让快消失对象的距离因子变短以便提前探索
-	 * 
+	 *
 	 * @param a            agent
 	 * @param b            对象
 	 * @param TSPHeuristic 是否加入因子修正
@@ -347,7 +464,7 @@ public class TWAgentWorkingMemory {
 	/**
 	 * 没用到
 	 * updates memory using 2d array of sensor range - currently not used
-	 * 
+	 *
 	 * @see TWAgentWorkingMemory updateMemory(sim.util.Bag, sim.util.IntBag,
 	 *      sim.util.IntBag)
 	 */
@@ -361,7 +478,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 清除‘观测’记忆中特定位置的东西
-	 * 
+	 *
 	 * @param x x坐标
 	 * @param y y坐标
 	 */
@@ -371,7 +488,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * 清除清除‘观测’记忆中一个特定的物品实例。
-	 * 
+	 *
 	 * @param o 物品实例
 	 */
 	public void removeObject(TWEntity o) {
@@ -460,7 +577,7 @@ public class TWAgentWorkingMemory {
 
 	/**
 	 * Is the cell blocked according to our memory?
-	 * 
+	 *
 	 * @param tx x position of cell
 	 * @param ty y position of cell
 	 * @return true if the cell is blocked in our memory
@@ -477,4 +594,7 @@ public class TWAgentWorkingMemory {
 		return (e instanceof TWObstacle);
 	}
 
+	public TWAgentPercept[][] getObjects() {
+		return objects;
+	}
 }
