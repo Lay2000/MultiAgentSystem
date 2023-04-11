@@ -173,18 +173,23 @@ public class TWAgentWorkingMemory {
 	 * remove probabilistically (exponential decay of memory)
 	 */
 	public void decayMemory() {
-	//		 put some decay on other memory pieces (this will require complete
-	//		 iteration over memory though, so expensive.
-	//		This is a simple example of how to do this.
-		for (int x = 0; x < this.objects.length; x++) {
-		   for (int y = 0; y < this.objects[x].length; y++) {
-			   TWAgentPercept currentMemory =  objects[x][y];
-			   if(currentMemory!=null && currentMemory.getT() < schedule.getTime()-MAX_TIME){
-				   memoryGrid.set(x, y, null);
-				   memorySize--;
-			   }
-		   }
+		// .......................
+		for (int i = 0; i < memoryGrid.getWidth(); i++) {
+			for (int j = 0; j < memoryGrid.getHeight(); j++) {
+				if (objects[i][j] != null && objects[i][j].getO() != null) {
+					if (!(getEstimatedRemainingLifetime(objects[i][j].getO(), 1.) > 0)) {
+						objects[i][j].setO(null);
+						memoryGrid.set(i, j, null);
+					}
+				}
+			}
 		}
+	}
+	public double getEstimatedRemainingLifetime(TWEntity o, double threshold) {
+		if (objects[o.getX()][o.getY()] == null)
+			return 0;
+		else
+			return (Parameters.lifeTime * threshold) - (this.getSimulationTime() - objects[o.getX()][o.getY()].getT());
 	}
 
 
